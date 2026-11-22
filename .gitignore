@@ -221,3 +221,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node & KLI runtime
+node_modules/
+dist/
+data/
+.DS_Store
