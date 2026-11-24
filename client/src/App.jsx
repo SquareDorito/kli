@@ -40,7 +40,30 @@ export default function App() {
   const [filePreviewTarget, setFilePreviewTarget] = useState(null);
   const [attentionSessions, setAttentionSessions] = useState({});
   const [portsBySession, setPortsBySession] = useState({});
-  const [tabOrder, setTabOrder] = useState([]);
+  const [tabOrder, setTabOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('kli-worker-order') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [projectOrder, setProjectOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('kli-project-order') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('kli-sidebar-width'));
+      return Number.isFinite(n) && n >= 200 && n <= 520 ? n : 276;
+    } catch {
+      return 276;
+    }
+  });
   const [authStatus, setAuthStatus] = useState({ enabled: false, authenticated: true });
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     try {
@@ -116,9 +139,74 @@ export default function App() {
     }
   }, [checkAuth]);
 
-  // Global shortcuts: Cmd+Shift+P palette, Option+Shift+Up/Down (or Ctrl+Shift+Up/Down) projects, Option+Up/Down (or Ctrl+Up/Down) workers
+  const sortByOrder = (items, orderList, getKey) => {
+    if (!orderList.length) return items;
+    const rank = new Map(orderList.map((id, i) => [id, i]));
+    return [...items].sort((a, b) => {
+      const ra = rank.has(getKey(a)) ? rank.get(getKey(a)) : 9999;
+      const rb = rank.has(getKey(b)) ? rank.get(getKey(b)) : 9999;
+      return ra - rb;
+    });
+  };
+
+  const orderedSessions = useMemo(
+    () => sortByOrder(sessions, tabOrder, (s) => s.tmuxName),
+    [sessions, tabOrder]
+  );
+
+  const orderedProjects = useMemo(
+    () => sortByOrder(projects, projectOrder, (p) => p.id),
+    [projects, projectOrder]
+  );
+
+  // Global shortcuts: Esc closes modals/drawers, Cmd+Shift+P palette, Cmd/Option/Ctrl+Shift+Up/Down projects, Option/Ctrl+Up/Down workers
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (e.key === 'Escape' && !showPalette) {
+        if (filePreviewTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          setFilePreviewTarget(null);
+          return;
+        }
+        if (showNewSession) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowNewSession(false);
+          return;
+        }
+        if (showAddProject) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowAddProject(false);
+          return;
+        }
+        if (showUsageSettings) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowUsageSettings(false);
+          return;
+        }
+        if (showMessaging) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowMessaging(false);
+          return;
+        }
+        if (showGitDiff) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowGitDiff(false);
+          return;
+        }
+        if (showUsageHistory) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowUsageHistory(false);
+          return;
+        }
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         e.stopPropagation();
@@ -126,23 +214,27 @@ export default function App() {
         return;
       }
 
-      const isNavMod = (e.altKey && !e.ctrlKey && !e.metaKey) || (e.ctrlKey && !e.altKey && !e.metaKey);
+      const isNavMod =
+        (e.altKey && !e.ctrlKey && !e.metaKey) ||
+        (e.ctrlKey && !e.altKey && !e.metaKey) ||
+        (e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey);
       if (isNavMod && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         const delta = e.key === 'ArrowDown' ? 1 : -1;
 
         if (e.shiftKey) {
-          if (!projects.length) return;
+          if (!orderedProjects.length) return;
           e.preventDefault();
           e.stopPropagation();
           const curProjId =
-            (sessions.find((s) => s.tmuxName === activeSessionName)?.projectId) ||
+            (orderedSessions.find((s) => s.tmuxName === activeSessionName)?.projectId) ||
             selectedProjectId ||
-            projects[0]?.id;
-          const idx = projects.findIndex((p) => p.id === curProjId);
-          const nextIdx = idx === -1 ? 0 : (idx + delta + projects.length) % projects.length;
-          const nextProj = projects[nextIdx];
+            orderedProjects[0]?.id;
+          const idx = orderedProjects.findIndex((p) => p.id === curProjId);
+          const nextIdx =
+            idx === -1 ? 0 : (idx + delta + orderedProjects.length) % orderedProjects.length;
+          const nextProj = orderedProjects[nextIdx];
           setSelectedProjectId(nextProj.id);
-          const projSess = sessions.find(
+          const projSess = orderedSessions.find(
             (s) => s.projectId === nextProj.id || (!s.projectId && s.projectPath === nextProj.path)
           );
           if (projSess) {
@@ -150,15 +242,15 @@ export default function App() {
           }
         } else {
           const curProjId =
-            (sessions.find((s) => s.tmuxName === activeSessionName)?.projectId) ||
+            (orderedSessions.find((s) => s.tmuxName === activeSessionName)?.projectId) ||
             selectedProjectId ||
-            projects[0]?.id;
-          const curProj = projects.find((p) => p.id === curProjId);
+            orderedProjects[0]?.id;
+          const curProj = orderedProjects.find((p) => p.id === curProjId);
           const projWorkers = curProj
-            ? sessions.filter(
+            ? orderedSessions.filter(
                 (s) => s.projectId === curProj.id || (!s.projectId && s.projectPath === curProj.path)
               )
-            : sessions;
+            : orderedSessions;
           if (projWorkers.length < 2) return;
           e.preventDefault();
           e.stopPropagation();
@@ -171,7 +263,20 @@ export default function App() {
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [projects, sessions, selectedProjectId, activeSessionName]);
+  }, [
+    orderedProjects,
+    orderedSessions,
+    selectedProjectId,
+    activeSessionName,
+    showPalette,
+    filePreviewTarget,
+    showNewSession,
+    showAddProject,
+    showUsageSettings,
+    showMessaging,
+    showGitDiff,
+    showUsageHistory,
+  ]);
 
   useEffect(() => {
     refreshAll();
@@ -293,6 +398,22 @@ export default function App() {
     }
   };
 
+  const handleRenameProject = async (projectId, alias) => {
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update project alias');
+      await refreshAll();
+      showToast(alias ? `Project alias set to "${alias}"` : 'Cleared project alias');
+    } catch (err) {
+      showToast(`Alias update failed: ${err.message}`);
+    }
+  };
+
   const handleAddProject = async (payload) => {
     const res = await fetch('/api/projects', {
       method: 'POST',
@@ -301,9 +422,18 @@ export default function App() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to add project');
-    await refreshAll();
     setSelectedProjectId(data.project.id);
-    showToast(`Added project ${data.project.name}`);
+    try {
+      await handleCreateSession({
+        projectId: data.project.id,
+        kind: 'agy',
+        mode: 'auto',
+        effort: 'medium',
+      });
+    } catch {
+      await refreshAll();
+    }
+    showToast(`Added project ${data.project.name} & started worker`);
   };
 
   const handleDeleteProject = async (id) => {
@@ -395,25 +525,44 @@ export default function App() {
     });
   };
 
-  const orderedSessions = useMemo(() => {
-    if (!tabOrder.length) return sessions;
-    const rank = new Map(tabOrder.map((id, i) => [id, i]));
-    return [...sessions].sort((a, b) => {
-      const ra = rank.has(a.tmuxName) ? rank.get(a.tmuxName) : 9999;
-      const rb = rank.has(b.tmuxName) ? rank.get(b.tmuxName) : 9999;
-      return ra - rb;
-    });
-  }, [sessions, tabOrder]);
-
-  const handleReorderTabs = (fromName, toName) => {
-    const current = orderedSessions.map((s) => s.tmuxName);
-    const fromIdx = current.indexOf(fromName);
-    const toIdx = current.indexOf(toName);
-    if (fromIdx === -1 || toIdx === -1) return;
-    const next = [...current];
+  const reorderIds = (keys, fromKey, toKey) => {
+    const fromIdx = keys.indexOf(fromKey);
+    const toIdx = keys.indexOf(toKey);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return null;
+    const next = [...keys];
     const [moved] = next.splice(fromIdx, 1);
     next.splice(toIdx, 0, moved);
+    return next;
+  };
+
+  const handleReorderTabs = (fromName, toName) => {
+    const next = reorderIds(
+      orderedSessions.map((s) => s.tmuxName),
+      fromName,
+      toName
+    );
+    if (!next) return;
     setTabOrder(next);
+    try {
+      localStorage.setItem('kli-worker-order', JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleReorderProjects = (fromId, toId) => {
+    const next = reorderIds(
+      orderedProjects.map((p) => p.id),
+      fromId,
+      toId
+    );
+    if (!next) return;
+    setProjectOrder(next);
+    try {
+      localStorage.setItem('kli-project-order', JSON.stringify(next));
+    } catch {
+      // ignore
+    }
   };
 
   const handleToggleNotifications = async (enabled) => {
@@ -426,6 +575,35 @@ export default function App() {
     } catch {
       // ignore
     }
+  };
+
+  const startSidebarResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    let latestW = startW;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev) => {
+      latestW = Math.max(200, Math.min(520, startW + (ev.clientX - startX)));
+      setSidebarWidth(latestW);
+    };
+
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      try {
+        localStorage.setItem('kli-sidebar-width', String(latestW));
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   return (
@@ -457,7 +635,8 @@ export default function App() {
 
       <div className="app-body">
         <ProjectSidebar
-          projects={projects}
+          width={sidebarWidth}
+          projects={orderedProjects}
           sessions={orderedSessions}
           selectedProjectId={selectedProjectId}
           activeSessionName={activeSessionName}
@@ -473,12 +652,22 @@ export default function App() {
           onOpenAddProject={() => setShowAddProject(true)}
           onOpenMessaging={() => setShowMessaging(true)}
           onDeleteProject={handleDeleteProject}
+          onRenameProject={handleRenameProject}
           onKillSession={handleKillSession}
           onRestartSession={handleRestartSession}
+          onReorderProjects={handleReorderProjects}
+          onReorderWorkers={handleReorderTabs}
+        />
+
+        <div
+          className="sidebar-resizer"
+          onMouseDown={startSidebarResize}
+          title="Drag to resize sidebar"
         />
 
         <TerminalPane
           theme={theme}
+          projects={orderedProjects}
           sessions={orderedSessions}
           activeSession={activeSession}
           activeProject={activeProject}

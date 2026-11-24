@@ -7,6 +7,7 @@ const USAGE_FILE = path.join(DATA_DIR, 'usage.json');
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -29,6 +30,7 @@ const DEFAULT_CONFIG = {
 const FALLBACK_CONTEXT_WINDOW = 200000;
 const FALLBACK_FIVE_HOUR_TOKENS = 2500000;
 const FALLBACK_DAILY_TOKENS = 8000000;
+const FALLBACK_WEEKLY_TOKENS = 40000000;
 
 function loadState() {
   ensureDataDir();
@@ -41,6 +43,8 @@ function loadState() {
         fiveHourResetText: null,
         dailyPct: null,
         dailyResetText: null,
+        weeklyPct: null,
+        weeklyResetText: null,
         updatedAt: 0,
       },
       sessions: {},
@@ -56,6 +60,8 @@ function loadState() {
         fiveHourResetText: null,
         dailyPct: null,
         dailyResetText: null,
+        weeklyPct: null,
+        weeklyResetText: null,
         updatedAt: 0,
         ...(parsed.parsedQuotas || {}),
       },
@@ -70,6 +76,8 @@ function loadState() {
         fiveHourResetText: null,
         dailyPct: null,
         dailyResetText: null,
+        weeklyPct: null,
+        weeklyResetText: null,
         updatedAt: 0,
       },
       sessions: {},
@@ -208,9 +216,9 @@ class UsageTracker extends EventEmitter {
       }
     }
 
-    // 4. Deduce Daily / 24h / Weekly quota from /usage output
+    // 4. Deduce Daily / 24h quota from /usage output
     const dailyMatch = rolling.match(
-      /(?:daily|24[\s-]*h(?:our|r)?|weekly|all\s+models)[\s\S]{0,120}?(\d{1,3}(?:\.\d+)?)\s*%(?:\s*(?:used|remaining|left))?/i
+      /(?:daily|24[\s-]*h(?:our|r)?)[\s\S]{0,120}?(\d{1,3}(?:\.\d+)?)\s*%(?:\s*(?:used|remaining|left))?/i
     );
     if (dailyMatch) {
       let pct = parseFloat(dailyMatch[1]);
@@ -221,6 +229,24 @@ class UsageTracker extends EventEmitter {
           .match(/resets?\s+(?:in\s+)?([a-z0-9hm:\s,]+(?:am|pm)?)/i);
         this.state.parsedQuotas.dailyPct = Math.round(pct * 10) / 10;
         if (resetMatch) this.state.parsedQuotas.dailyResetText = resetMatch[1].trim();
+        this.state.parsedQuotas.updatedAt = Date.now();
+        changed = true;
+      }
+    }
+
+    // 4b. Deduce Weekly / 7d quota from /usage output
+    const weeklyMatch = rolling.match(
+      /(?:weekly|7[\s-]*d(?:ay|ays)?|all\s+models)[\s\S]{0,120}?(\d{1,3}(?:\.\d+)?)\s*%(?:\s*(?:used|remaining|left))?/i
+    );
+    if (weeklyMatch) {
+      let pct = parseFloat(weeklyMatch[1]);
+      if (!Number.isNaN(pct) && pct >= 0 && pct <= 100) {
+        if (/remaining|left/i.test(weeklyMatch[0])) pct = Math.max(0, 100 - pct);
+        const resetMatch = rolling
+          .slice(rolling.lastIndexOf(weeklyMatch[0]))
+          .match(/resets?\s+(?:in\s+)?([a-z0-9dhm:\s,]+(?:am|pm)?)/i);
+        this.state.parsedQuotas.weeklyPct = Math.round(pct * 10) / 10;
+        if (resetMatch) this.state.parsedQuotas.weeklyResetText = resetMatch[1].trim();
         this.state.parsedQuotas.updatedAt = Date.now();
         changed = true;
       }
@@ -329,6 +355,8 @@ class UsageTracker extends EventEmitter {
     let oldestFiveHourTs = null;
     let dailyTokens = 0;
     let oldestDailyTs = null;
+    let weeklyTokens = 0;
+    let oldestWeeklyTs = null;
 
     for (const ev of this.state.events) {
       if (now - ev.ts <= FIVE_HOURS_MS) {
@@ -338,6 +366,10 @@ class UsageTracker extends EventEmitter {
       if (now - ev.ts <= ONE_DAY_MS) {
         dailyTokens += ev.tokens;
         if (oldestDailyTs === null || ev.ts < oldestDailyTs) oldestDailyTs = ev.ts;
+      }
+      if (now - ev.ts <= ONE_WEEK_MS) {
+        weeklyTokens += ev.tokens;
+        if (oldestWeeklyTs === null || ev.ts < oldestWeeklyTs) oldestWeeklyTs = ev.ts;
       }
     }
 
@@ -349,6 +381,10 @@ class UsageTracker extends EventEmitter {
       100,
       Math.round((dailyTokens / FALLBACK_DAILY_TOKENS) * 1000) / 10
     );
+    const estWeeklyPct = Math.min(
+      100,
+      Math.round((weeklyTokens / FALLBACK_WEEKLY_TOKENS) * 1000) / 10
+    );
 
     const fiveHourResetMs = oldestFiveHourTs
       ? Math.max(0, oldestFiveHourTs + FIVE_HOURS_MS - now)
@@ -356,6 +392,9 @@ class UsageTracker extends EventEmitter {
     const dailyResetMs = oldestDailyTs
       ? Math.max(0, oldestDailyTs + ONE_DAY_MS - now)
       : ONE_DAY_MS;
+    const weeklyResetMs = oldestWeeklyTs
+      ? Math.max(0, oldestWeeklyTs + ONE_WEEK_MS - now)
+      : ONE_WEEK_MS;
 
     const activeSess = activeSessionName ? this._ensureSession(activeSessionName) : null;
 
@@ -374,6 +413,13 @@ class UsageTracker extends EventEmitter {
         source: pq.dailyPct !== null && pq.dailyPct !== undefined ? 'usage' : 'estimated',
         resetText: pq.dailyResetText || null,
         resetInMs: dailyResetMs,
+      },
+      weekly: {
+        tokens: weeklyTokens,
+        pct: pq.weeklyPct !== null && pq.weeklyPct !== undefined ? pq.weeklyPct : estWeeklyPct,
+        source: pq.weeklyPct !== null && pq.weeklyPct !== undefined ? 'usage' : 'estimated',
+        resetText: pq.weeklyResetText || null,
+        resetInMs: weeklyResetMs,
       },
       activeSession: activeSess
         ? {

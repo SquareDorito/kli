@@ -18,7 +18,7 @@ function loadCustomPresets() {
 }
 
 export default function NewSessionModal({ projects, defaultProjectId, onClose, onCreate }) {
-  const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || '');
+  const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || '__home__');
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState('agy');
   const [mode, setMode] = useState('auto');
@@ -59,8 +59,10 @@ export default function NewSessionModal({ projects, defaultProjectId, onClose, o
     e.preventDefault();
     setSubmitting(true);
     try {
+      const isHome = !projectId || projectId === '__home__';
       await onCreate({
-        projectId,
+        projectId: isHome ? null : projectId,
+        useHomeDir: isHome,
         label: label.trim() || undefined,
         kind,
         mode,
@@ -69,7 +71,7 @@ export default function NewSessionModal({ projects, defaultProjectId, onClose, o
         sandbox,
         continueLast,
         initialPrompt: initialPrompt.trim() || undefined,
-        worktreeBranch: useWorktree && worktreeBranch.trim() ? worktreeBranch.trim() : undefined,
+        worktreeBranch: !isHome && useWorktree && worktreeBranch.trim() ? worktreeBranch.trim() : undefined,
       });
       onClose();
     } finally {
@@ -118,9 +120,10 @@ export default function NewSessionModal({ projects, defaultProjectId, onClose, o
           <div className="field">
             <label>Project Workspace</label>
             <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="__home__">No Project — ~ (Home directory)</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} — {p.displayPath}
+                  {p.alias || p.name} — {p.displayPath}
                 </option>
               ))}
             </select>

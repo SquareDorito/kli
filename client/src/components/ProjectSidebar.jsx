@@ -10,11 +10,12 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
-  MessageSquare,
   RotateCw,
+  Pencil,
 } from 'lucide-react';
 
 export default function ProjectSidebar({
+  width,
   projects,
   sessions,
   selectedProjectId,
@@ -28,13 +29,37 @@ export default function ProjectSidebar({
   onOpenAddProject,
   onOpenMessaging,
   onDeleteProject,
+  onRenameProject,
   onKillSession,
   onRestartSession,
+  onReorderProjects,
+  onReorderWorkers,
 }) {
-  const [collapsed, setCollapsed] = useState({});
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('kli-collapsed-projects') || '{}');
+      return saved && typeof saved === 'object' ? saved : {};
+    } catch {
+      return {};
+    }
+  });
+  const [editingProjId, setEditingProjId] = useState(null);
+  const [editingAlias, setEditingAlias] = useState('');
+  const [draggedProjId, setDraggedProjId] = useState(null);
+  const [dragOverProjId, setDragOverProjId] = useState(null);
+  const [draggedWorker, setDraggedWorker] = useState(null);
+  const [dragOverWorker, setDragOverWorker] = useState(null);
 
   const toggleCollapse = (id) => {
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+    setCollapsed((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try {
+        localStorage.setItem('kli-collapsed-projects', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   // Group sessions by projectId (or match by path)
@@ -48,16 +73,29 @@ export default function ProjectSidebar({
   );
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={width ? { width } : undefined}>
       <div className="sidebar-top">
-        <button
-          type="button"
-          className="primary-cta"
-          onClick={() => onOpenNewSession(selectedProjectId)}
-        >
-          <Plus size={15} strokeWidth={2.5} />
-          <span>New agy Session</span>
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            type="button"
+            className="primary-cta"
+            style={{ flex: 1, padding: '8px 10px' }}
+            onClick={() => onOpenNewSession(selectedProjectId)}
+            title="Launch new agy session"
+          >
+            <span>+ agy</span>
+          </button>
+          <button
+            type="button"
+            className="secondary-btn"
+            style={{ flex: 1, padding: '8px 10px' }}
+            onClick={onOpenAddProject}
+            title="Add project directory"
+          >
+            <FolderPlus size={14} />
+            <span>Add Project</span>
+          </button>
+        </div>
       </div>
 
       <div className="sidebar-section-header">
@@ -70,11 +108,50 @@ export default function ProjectSidebar({
           const projSessions = sessionsForProject(project);
           const isCollapsed = Boolean(collapsed[project.id]);
           const isSelected = selectedProjectId === project.id;
+          const displayProjName = project.alias || project.name;
+          const isEditingProj = editingProjId === project.id;
+
+          const commitProjAlias = () => {
+            const next = editingAlias.trim();
+            if (next !== (project.alias || '')) {
+              onRenameProject?.(project.id, next);
+            }
+            setEditingProjId(null);
+          };
 
           return (
             <div className="project-group" key={project.id}>
               <div
-                className={`project-row ${isSelected ? 'selected' : ''}`}
+                draggable={!isEditingProj}
+                onDragStart={(e) => {
+                  setDraggedProjId(project.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', project.id);
+                }}
+                onDragOver={(e) => {
+                  if (!draggedProjId || draggedProjId === project.id) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverProjId !== project.id) setDragOverProjId(project.id);
+                }}
+                onDragLeave={() => {
+                  if (dragOverProjId === project.id) setDragOverProjId(null);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedProjId && draggedProjId !== project.id) {
+                    onReorderProjects?.(draggedProjId, project.id);
+                  }
+                  setDraggedProjId(null);
+                  setDragOverProjId(null);
+                }}
+                onDragEnd={() => {
+                  setDraggedProjId(null);
+                  setDragOverProjId(null);
+                }}
+                className={`project-row ${isSelected ? 'selected' : ''} ${
+                  dragOverProjId === project.id ? 'drag-over' : ''
+                }`}
                 onClick={() => {
                   onSelectProject(project.id);
                   toggleCollapse(project.id);
@@ -90,7 +167,39 @@ export default function ProjectSidebar({
                   style={{ background: project.color || 'var(--accent-primary)' }}
                 />
                 <div className="project-name-wrap">
-                  <span className="project-name">{project.name}</span>
+                  {isEditingProj ? (
+                    <input
+                      type="text"
+                      className="tab-rename-input"
+                      style={{ width: '100%', fontSize: 12 }}
+                      autoFocus
+                      placeholder={project.name}
+                      value={editingAlias}
+                      onChange={(e) => setEditingAlias(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={commitProjAlias}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          commitProjAlias();
+                        } else if (e.key === 'Escape') {
+                          setEditingProjId(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="project-name"
+                      title={project.alias ? `${project.alias} (${project.name})` : `${project.name} · Double-click to set alias`}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setEditingProjId(project.id);
+                        setEditingAlias(project.alias || '');
+                      }}
+                    >
+                      {displayProjName}
+                    </span>
+                  )}
                   <div className="project-meta-row">
                     {project.branch ? (
                       <span className="git-badge">
@@ -110,7 +219,18 @@ export default function ProjectSidebar({
                   <button
                     type="button"
                     className="mini-icon-btn"
-                    title={`Launch agy in ${project.name}`}
+                    title="Set project alias"
+                    onClick={() => {
+                      setEditingProjId(project.id);
+                      setEditingAlias(project.alias || '');
+                    }}
+                  >
+                    <Pencil size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    className="mini-icon-btn"
+                    title={`Launch agy in ${displayProjName}`}
                     onClick={() => onOpenNewSession(project.id)}
                   >
                     <Plus size={13} />
@@ -132,14 +252,48 @@ export default function ProjectSidebar({
                     const isActive = sess.tmuxName === activeSessionName;
                     const needsAttention = Boolean(attentionSessions[sess.tmuxName]);
                     const ports = portsBySession[sess.tmuxName] || [];
-                    // Ensure worker name is prefixed with its project name
-                    const displayLabel = sess.label.startsWith(`${project.name} `)
-                      ? sess.label
-                      : `${project.name} ${sess.label}`;
+                    // Prefix worker name with project alias (or project name)
+                    let workerSuffix = sess.label;
+                    if (workerSuffix.startsWith(`${project.name} `)) {
+                      workerSuffix = workerSuffix.slice(project.name.length + 1);
+                    } else if (project.alias && workerSuffix.startsWith(`${project.alias} `)) {
+                      workerSuffix = workerSuffix.slice(project.alias.length + 1);
+                    }
+                    const displayLabel = `${displayProjName} ${workerSuffix}`;
                     return (
                       <div key={sess.tmuxName} className="session-item-wrap">
                         <div
-                          className={`session-item compact ${isActive ? 'active' : ''}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.stopPropagation();
+                            setDraggedWorker(sess.tmuxName);
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('text/plain', sess.tmuxName);
+                          }}
+                          onDragOver={(e) => {
+                            if (!draggedWorker || draggedWorker === sess.tmuxName) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (dragOverWorker !== sess.tmuxName) setDragOverWorker(sess.tmuxName);
+                          }}
+                          onDragLeave={() => {
+                            if (dragOverWorker === sess.tmuxName) setDragOverWorker(null);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (draggedWorker && draggedWorker !== sess.tmuxName) {
+                              onReorderWorkers?.(draggedWorker, sess.tmuxName);
+                            }
+                            setDraggedWorker(null);
+                            setDragOverWorker(null);
+                          }}
+                          onDragEnd={() => {
+                            setDraggedWorker(null);
+                            setDragOverWorker(null);
+                          }}
+                          className={`session-item compact ${isActive ? 'active' : ''} ${
+                            dragOverWorker === sess.tmuxName ? 'drag-over' : ''
+                          }`}
                           onClick={() => onSelectSession(sess.tmuxName)}
                         >
                           <span
@@ -241,21 +395,6 @@ export default function ProjectSidebar({
       </div>
 
       <div className="sidebar-footer">
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" className="secondary-btn" style={{ flex: 1 }} onClick={onOpenAddProject}>
-            <FolderPlus size={14} />
-            <span>Add Project</span>
-          </button>
-          <button
-            type="button"
-            className="secondary-btn"
-            title="Cross-Worker Messaging"
-            onClick={onOpenMessaging}
-          >
-            <MessageSquare size={14} />
-          </button>
-        </div>
-
         <div className="env-pills">
           <span className="env-pill">
             {envHealth?.tmux ? (

@@ -70,6 +70,7 @@ const LIGHT_TMUX_THEME = {
 
 export default function TerminalPane({
   theme = 'dark',
+  projects = [],
   sessions,
   activeSession,
   activeProject,
@@ -193,6 +194,15 @@ export default function TerminalPane({
       // (avoids async navigator.clipboard.readText() permission prompts/focus freezes)
       if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key.toLowerCase() === 'v') {
         term.focus();
+        return false;
+      }
+      // Shift+Enter: insert newline in agy prompt instead of submitting
+      if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        const sock = wsRef.current;
+        if (sock && sock.readyState === WebSocket.OPEN) {
+          sock.send(JSON.stringify({ type: 'input', data: '\x1b\r' }));
+        }
         return false;
       }
       return true;
@@ -562,7 +572,22 @@ export default function TerminalPane({
                     }}
                   />
                 ) : (
-                  <span>{sess.label}</span>
+                  <span>
+                    {(() => {
+                      const proj = projects.find(
+                        (p) => p.id === sess.projectId || (!sess.projectId && p.path === sess.projectPath)
+                      );
+                      if (!proj) return sess.label;
+                      const displayProj = proj.alias || proj.name;
+                      if (sess.label.startsWith(`${proj.name} `)) {
+                        return `${displayProj} ${sess.label.slice(proj.name.length + 1)}`;
+                      }
+                      if (proj.alias && sess.label.startsWith(`${proj.alias} `)) {
+                        return sess.label;
+                      }
+                      return `${displayProj} ${sess.label}`;
+                    })()}
+                  </span>
                 )}
                 <button
                   type="button"
@@ -581,6 +606,20 @@ export default function TerminalPane({
         </div>
 
         <div className="terminal-quick-actions">
+          <button
+            type="button"
+            className="slash-pill"
+            onClick={() => {
+              const sock = wsRef.current;
+              if (sock && sock.readyState === WebSocket.OPEN) {
+                sock.send(JSON.stringify({ type: 'input', data: '\x1b' }));
+              }
+              xtermRef.current?.focus();
+            }}
+            title="Send Esc (\x1b) to terminal (useful if Vimium intercepts Esc) · Shortcut: Ctrl+["
+          >
+            Esc
+          </button>
           <button
             type="button"
             className="slash-pill"

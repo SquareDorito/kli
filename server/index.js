@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
@@ -8,8 +9,10 @@ import {
   listProjects,
   addProject,
   removeProject,
+  updateProject,
   getProjectById,
   browseDirectories,
+  createDirectory,
   getGitDiff,
   createGitWorktree,
   readFileSnippet,
@@ -132,10 +135,29 @@ app.delete('/api/projects/:id', (req, res) => {
   }
 });
 
+app.patch('/api/projects/:id', async (req, res) => {
+  try {
+    const project = await updateProject(req.params.id, req.body || {});
+    res.json({ project });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/api/fs/browse', (req, res) => {
   try {
     const data = browseDirectories(req.query.path ? String(req.query.path) : undefined);
     res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/fs/mkdir', (req, res) => {
+  try {
+    const { parentPath, name } = req.body || {};
+    const data = createDirectory(parentPath, name);
+    res.status(201).json(data);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -162,6 +184,10 @@ app.post('/api/sessions', async (req, res) => {
         projectPath = proj.path;
         projectName = proj.name;
       }
+    }
+    if ((body.useHomeDir || !body.projectId) && !projectPath) {
+      projectPath = os.homedir();
+      projectName = projectName || '~';
     }
     if (body.worktreeBranch && projectPath) {
       const wt = await createGitWorktree(projectPath, body.worktreeBranch);

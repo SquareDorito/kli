@@ -190,6 +190,33 @@ export function removeProject(id) {
   return { removed: projects.length !== next.length };
 }
 
+export async function updateProject(id, { alias, name, color } = {}) {
+  const projects = loadRawProjects();
+  const idx = projects.findIndex((p) => p.id === id);
+  if (idx === -1) {
+    throw new Error('Project not found');
+  }
+  const current = { ...projects[idx] };
+  if (alias !== undefined) {
+    const trimmed = String(alias || '').trim();
+    if (trimmed) {
+      current.alias = trimmed;
+    } else {
+      delete current.alias;
+    }
+  }
+  if (name !== undefined && String(name).trim()) {
+    current.name = String(name).trim();
+  }
+  if (color !== undefined && String(color).trim()) {
+    current.color = String(color).trim();
+  }
+  projects[idx] = current;
+  saveRawProjects(projects);
+  const git = await getGitInfo(current.path);
+  return { ...current, displayPath: compactPath(current.path), ...git };
+}
+
 export function browseDirectories(rawDir) {
   const target = expandHome(rawDir || os.homedir());
   if (!fs.existsSync(target)) {
@@ -210,6 +237,22 @@ export function browseDirectories(rawDir) {
     parent: path.dirname(target) !== target ? path.dirname(target) : null,
     directories: dirs,
   };
+}
+
+export function createDirectory(parentPath, folderName) {
+  const cleanName = String(folderName || '').trim();
+  if (!cleanName || cleanName === '.' || cleanName === '..' || /[/\\]/.test(cleanName)) {
+    throw new Error('Folder name must be a single valid directory name');
+  }
+  const base = expandHome(parentPath || os.homedir());
+  if (!fs.existsSync(base) || !fs.statSync(base).isDirectory()) {
+    throw new Error(`Parent directory does not exist: ${base}`);
+  }
+  const target = path.join(base, cleanName);
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(target, { recursive: true });
+  }
+  return browseDirectories(target);
 }
 
 export async function getGitDiff(projectPath) {

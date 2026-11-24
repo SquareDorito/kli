@@ -1,15 +1,11 @@
 import React from 'react';
 import {
-  Minimize2,
   Settings,
   RefreshCw,
   Sun,
   Moon,
   GitBranch,
   BarChart3,
-  MessageSquare,
-  Command,
-  Activity,
 } from 'lucide-react';
 import CircularTracker from './CircularTracker.jsx';
 
@@ -22,8 +18,10 @@ function formatTokens(n) {
 function formatReset(ms) {
   if (!ms || ms <= 0) return 'now';
   const totalMin = Math.ceil(ms / 60000);
-  const h = Math.floor(totalMin / 60);
+  const d = Math.floor(totalMin / 1440);
+  const h = Math.floor((totalMin % 1440) / 60);
   const m = totalMin % 60;
+  if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
@@ -61,11 +59,11 @@ export default function TopBar({
   const fiveHourPct = usage?.fiveHour?.pct || 0;
   const fiveHourReset = usage?.fiveHour?.resetText || formatReset(usage?.fiveHour?.resetInMs);
 
-  const dailyPct = usage?.daily?.pct || 0;
-  const dailySub =
-    usage?.daily?.resetText
-      ? `resets ${usage.daily.resetText}`
-      : `${formatTokens(usage?.daily?.tokens || 0)} tok`;
+  const weeklyPct = usage?.weekly?.pct || 0;
+  const weeklySub =
+    usage?.weekly?.resetText
+      ? `resets ${usage.weekly.resetText}`
+      : `${formatTokens(usage?.weekly?.tokens || 0)} tok`;
 
   return (
     <header className="topbar">
@@ -96,10 +94,10 @@ export default function TopBar({
         />
 
         <CircularTracker
-          label="Daily"
-          sublabel={dailySub}
-          pct={dailyPct}
-          tooltip={`Daily quota (${usage?.daily?.source || 'estimated'} — run /usage in agy to sync).`}
+          label="Weekly"
+          sublabel={weeklySub}
+          pct={weeklyPct}
+          tooltip={`Weekly quota (${usage?.weekly?.source || 'estimated'} — run /usage in agy to sync).`}
           onClick={onOpenSettings}
         />
 
@@ -115,41 +113,10 @@ export default function TopBar({
               Auto-compact {cfg.autocompactEnabled ? `${cfg.autocompactThresholdPct}%` : 'OFF'}
             </span>
           </button>
-
-          <button
-            type="button"
-            className="compact-now-btn"
-            disabled={!activeSession || compacting}
-            onClick={onManualCompact}
-            title="Send /compact to the active agy tmux session"
-          >
-            <Minimize2 size={12} />
-            <span>{compacting ? 'Compacting…' : '/compact'}</span>
-          </button>
-
-          <button
-            type="button"
-            className="compact-now-btn"
-            disabled={!activeSession}
-            onClick={onSyncUsage}
-            title="Send /usage to active worker to calibrate 5h & daily rings"
-          >
-            <Activity size={12} />
-            <span>/usage</span>
-          </button>
         </div>
       </div>
 
       <div className="topbar-actions">
-        <button
-          type="button"
-          className="theme-toggle-btn"
-          onClick={onOpenPalette}
-          title="Command Palette (Cmd+Shift+P)"
-        >
-          <Command size={12} />
-          <span>⌘⇧P</span>
-        </button>
         <button
           type="button"
           className={`icon-btn ${showGitDiff ? 'active' : ''}`}
@@ -165,14 +132,6 @@ export default function TopBar({
           title="Usage History & Cost Breakdown"
         >
           <BarChart3 size={15} />
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={onOpenMessaging}
-          title="Cross-Worker Messaging"
-        >
-          <MessageSquare size={15} />
         </button>
         <button
           type="button"
