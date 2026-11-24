@@ -127,7 +127,8 @@ export default function ProjectSidebar({
         {projects.map((project) => {
           const projSessions = sessionsForProject(project);
           const isCollapsed = Boolean(collapsed[project.id]);
-          const isSelected = selectedProjectId === project.id;
+          const hasActiveWorker = projSessions.some((s) => s.tmuxName === activeSessionName);
+          const isProjectActive = activeSessionName ? hasActiveWorker : selectedProjectId === project.id;
           const displayProjName = project.alias || project.name;
           const isEditingProj = editingProjId === project.id;
 
@@ -140,7 +141,10 @@ export default function ProjectSidebar({
           };
 
           return (
-            <div className="project-group" key={project.id}>
+            <div
+              className={`project-group ${isProjectActive ? 'active-group' : ''}`}
+              key={project.id}
+            >
               <div
                 draggable={!isEditingProj}
                 onDragStart={(e) => {
@@ -169,9 +173,7 @@ export default function ProjectSidebar({
                   setDraggedProjId(null);
                   setDragOverProjId(null);
                 }}
-                className={`project-row ${isSelected ? 'selected' : ''} ${
-                  dragOverProjId === project.id ? 'drag-over' : ''
-                }`}
+                className={`project-row ${dragOverProjId === project.id ? 'drag-over' : ''}`}
                 onClick={() => {
                   onSelectProject(project.id);
                   toggleCollapse(project.id);
@@ -227,7 +229,11 @@ export default function ProjectSidebar({
                   ) : (
                     <span
                       className="project-name"
-                      title={project.alias ? `${project.alias} (${project.name})` : `${project.name} · Double-click to set alias`}
+                      title={`${project.alias ? `${project.alias} (${project.name})` : project.name}${
+                        project.branch
+                          ? ` · ${project.branch}${project.dirtyCount > 0 ? `*${project.dirtyCount}` : ''}`
+                          : ` · ${project.displayPath}`
+                      } · Double-click to set alias`}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
                         setEditingProjId(project.id);
@@ -237,17 +243,6 @@ export default function ProjectSidebar({
                       {displayProjName}
                     </span>
                   )}
-                  <div className="project-meta-row">
-                    {project.branch ? (
-                      <span className="git-badge">
-                        <GitBranch size={10} />
-                        {project.branch}
-                        {project.dirtyCount > 0 ? `*${project.dirtyCount}` : ''}
-                      </span>
-                    ) : (
-                      <span>{project.displayPath}</span>
-                    )}
-                  </div>
                 </div>
                 <div
                   className="project-row-actions"

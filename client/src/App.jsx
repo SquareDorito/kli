@@ -373,6 +373,17 @@ export default function App() {
     [sessions, activeSessionName]
   );
 
+  // Keep selectedProjectId in sync with activeSession
+  useEffect(() => {
+    if (!activeSession) return;
+    const match =
+      projects.find((p) => p.id === activeSession.projectId) ||
+      projects.find((p) => !activeSession.projectId && p.path === activeSession.projectPath);
+    if (match && match.id !== selectedProjectId) {
+      setSelectedProjectId(match.id);
+    }
+  }, [activeSession, projects, selectedProjectId]);
+
   const activeProject = useMemo(() => {
     if (activeSession?.projectId) {
       return projects.find((p) => p.id === activeSession.projectId) || null;
@@ -550,6 +561,15 @@ export default function App() {
 
   const handleSelectSession = (tmuxName) => {
     setActiveSessionName(tmuxName);
+    const targetSess = sessions.find((s) => s.tmuxName === tmuxName);
+    if (targetSess) {
+      const targetProj =
+        projects.find((p) => p.id === targetSess.projectId) ||
+        projects.find((p) => !targetSess.projectId && p.path === targetSess.projectPath);
+      if (targetProj) {
+        setSelectedProjectId(targetProj.id);
+      }
+    }
     setAttentionSessions((prev) => {
       if (!prev[tmuxName]) return prev;
       const next = { ...prev };
