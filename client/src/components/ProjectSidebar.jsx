@@ -73,22 +73,24 @@ export default function ProjectSidebar({
     (s) => !projects.some((p) => p.id === s.projectId || (!s.projectId && p.path === s.projectPath))
   );
 
-  // Worker status: 'red' (action/failure) > 'blue' (turn completed) > 'green' (working) > 'grey' (idle/acknowledged)
+  // Worker status: 'red' (action/failure) > 'blue' (turn completed) > 'green' (working) > 'bg' (background tasks) > 'grey' (idle/acknowledged)
   const getWorkerStatus = (sess) => {
     const tracked = usage?.sessions?.[sess.tmuxName]?.status;
     if (tracked === 'red' || attentionSessions[sess.tmuxName]) return 'red';
     if (tracked === 'blue') return 'blue';
     if (tracked === 'green') return 'green';
+    if (tracked === 'bg') return 'bg';
     return 'grey';
   };
 
-  // Project dot uses highest priority across its workers: red > blue > green > grey
+  // Project dot uses highest priority across its workers: red > blue > green > bg > grey
   const getProjectStatus = (projSessions) => {
     if (!projSessions.length) return null;
     const statuses = projSessions.map(getWorkerStatus);
     if (statuses.includes('red')) return 'red';
     if (statuses.includes('blue')) return 'blue';
     if (statuses.includes('green')) return 'green';
+    if (statuses.includes('bg')) return 'bg';
     return 'grey';
   };
 
@@ -200,6 +202,8 @@ export default function ProjectSidebar({
                       ? 'Turn completed'
                       : getProjectStatus(projSessions) === 'green'
                       ? 'Working'
+                      : getProjectStatus(projSessions) === 'bg'
+                      ? 'Background task running'
                       : getProjectStatus(projSessions) === 'grey'
                       ? 'Idle / acknowledged'
                       : undefined
@@ -337,6 +341,8 @@ export default function ProjectSidebar({
                                 ? 'Turn completed (click to acknowledge)'
                                 : workerStatus === 'green'
                                 ? 'Working'
+                                : workerStatus === 'bg'
+                                ? 'Background task running (main worker idle)'
                                 : 'Idle / acknowledged'
                             }
                           />

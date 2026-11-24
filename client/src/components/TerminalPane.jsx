@@ -531,6 +531,8 @@ export default function TerminalPane({
                 ? 'blue'
                 : trackedStatus === 'green'
                 ? 'green'
+                : trackedStatus === 'bg'
+                ? 'bg'
                 : 'grey';
             return (
               <div

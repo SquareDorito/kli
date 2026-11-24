@@ -425,10 +425,47 @@ export async function reconcileSessionStatuses(sessions, usageTracker) {
           /^(?:zsh|bash|fish)$/i.test(sess.currentCommand || '');
 
         if (isIdlePrompt) {
+          // Detect background tasks/subagents in agy footer, other active split panes, or non-agy child processes
+          let hasBg =
+            /\b\d+\s+(?:background\s+)?(?:tasks?|subagents?|agents?|shells?)\b|\bbackground\s+(?:tasks?|processes?|commands?|agents?)\b/i.test(
+              bottom
+            ) ||
+            (Array.isArray(sess.panes) &&
+              sess.panes.some(
+                (p) => p.paneId !== target && !/^(?:zsh|bash|fish|agy)$/i.test(p.command || '')
+              ));
+
+          if (!hasBg) {
+            try {
+              const { stdout: pidOut } = await execFileAsync(
+                'tmux',
+                ['display-message', '-p', '-t', target, '#{pane_pid}'],
+                { timeout: 1000 }
+              );
+              const panePid = pidOut.trim();
+              if (panePid) {
+                const { stdout: kids } = await execFileAsync('pgrep', ['-P', panePid, '-l'], {
+                  timeout: 1000,
+                }).catch(() => ({ stdout: '' }));
+                hasBg = kids
+                  .split('\n')
+                  .map((l) => l.trim())
+                  .filter(Boolean)
+                  .some((l) => {
+                    const proc = l.split(/\s+/).slice(1).join(' ');
+                    return proc && !/^(?:agy|zsh|bash|fish|caffeinate)$/i.test(proc);
+                  });
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          usageTracker.setSessionBackground(sess.tmuxName, hasBg);
           if (curStatus === 'green' || curStatus === 'red') {
             usageTracker.setSessionStatus(
               sess.tmuxName,
-              curStatus === 'green' ? 'blue' : 'grey',
+              curStatus === 'green' ? 'blue' : hasBg ? 'bg' : 'grey',
               { source: 'reconcile' }
             );
           }

@@ -128,6 +128,7 @@ class UsageTracker extends EventEmitter {
         compactions: 0,
         lastCompactAt: 0,
         status: 'grey',
+        hasBg: false,
         lastRedAt: 0,
         lastHookAt: 0,
         source: 'estimated',
@@ -416,7 +417,28 @@ class UsageTracker extends EventEmitter {
   acknowledgeSession(tmuxName) {
     const sess = this._ensureSession(tmuxName);
     if (sess.status === 'blue') {
+      sess.status = sess.hasBg ? 'bg' : 'grey';
+      this._scheduleSave();
+      const snap = this.getSnapshot(tmuxName);
+      this.emit('update', snap);
+      return snap;
+    }
+    return this.getSnapshot(tmuxName);
+  }
+
+  setSessionBackground(tmuxName, hasBg) {
+    const sess = this._ensureSession(tmuxName);
+    const nextBg = Boolean(hasBg);
+    let changed = sess.hasBg !== nextBg;
+    sess.hasBg = nextBg;
+    if (nextBg && sess.status === 'grey') {
+      sess.status = 'bg';
+      changed = true;
+    } else if (!nextBg && sess.status === 'bg') {
       sess.status = 'grey';
+      changed = true;
+    }
+    if (changed) {
       this._scheduleSave();
       const snap = this.getSnapshot(tmuxName);
       this.emit('update', snap);
@@ -426,7 +448,7 @@ class UsageTracker extends EventEmitter {
   }
 
   setSessionStatus(tmuxName, status, { source = 'hook' } = {}) {
-    if (!['red', 'blue', 'green', 'grey'].includes(status)) {
+    if (!['red', 'blue', 'green', 'bg', 'grey'].includes(status)) {
       throw new Error(`Invalid status: ${status}`);
     }
     const sess = this._ensureSession(tmuxName);
