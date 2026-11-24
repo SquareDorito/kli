@@ -23,8 +23,20 @@ export default function App() {
   });
   const [projects, setProjects] = useState([]);
   const [sessions, setSessions] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState(null);
-  const [activeSessionName, setActiveSessionName] = useState(null);
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    try {
+      return localStorage.getItem('kli-selected-project') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [activeSessionName, setActiveSessionName] = useState(() => {
+    try {
+      return localStorage.getItem('kli-active-session') || null;
+    } catch {
+      return null;
+    }
+  });
   const [usage, setUsage] = useState(null);
   const [envHealth, setEnvHealth] = useState(null);
   const [ptyBackend, setPtyBackend] = useState(null);
@@ -84,6 +96,24 @@ export default function App() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    try {
+      if (activeSessionName) localStorage.setItem('kli-active-session', activeSessionName);
+      else localStorage.removeItem('kli-active-session');
+    } catch {
+      // ignore
+    }
+  }, [activeSessionName]);
+
+  useEffect(() => {
+    try {
+      if (selectedProjectId) localStorage.setItem('kli-selected-project', selectedProjectId);
+      else localStorage.removeItem('kli-selected-project');
+    } catch {
+      // ignore
+    }
+  }, [selectedProjectId]);
+
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
@@ -129,7 +159,10 @@ export default function App() {
       setUsage(usageData);
       setPortsBySession(portsData.ports || {});
 
-      setSelectedProjectId((prev) => prev || nextProjects[0]?.id || null);
+      setSelectedProjectId((prev) => {
+        if (prev && nextProjects.some((p) => p.id === prev)) return prev;
+        return nextProjects[0]?.id || null;
+      });
       setActiveSessionName((prev) => {
         if (prev && nextSessions.some((s) => s.tmuxName === prev)) return prev;
         return nextSessions[0]?.tmuxName || null;
