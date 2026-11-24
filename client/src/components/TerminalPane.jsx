@@ -529,7 +529,9 @@ export default function TerminalPane({
                 ? 'red'
                 : trackedStatus === 'blue'
                 ? 'blue'
-                : 'green';
+                : trackedStatus === 'green'
+                ? 'green'
+                : 'grey';
             return (
               <div
                 key={sess.tmuxName}

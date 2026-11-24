@@ -73,21 +73,23 @@ export default function ProjectSidebar({
     (s) => !projects.some((p) => p.id === s.projectId || (!s.projectId && p.path === s.projectPath))
   );
 
-  // Worker status: 'red' (action/failure) > 'blue' (turn completed) > 'green' (working)
+  // Worker status: 'red' (action/failure) > 'blue' (turn completed) > 'green' (working) > 'grey' (idle/acknowledged)
   const getWorkerStatus = (sess) => {
     const tracked = usage?.sessions?.[sess.tmuxName]?.status;
     if (tracked === 'red' || attentionSessions[sess.tmuxName]) return 'red';
     if (tracked === 'blue') return 'blue';
-    return 'green';
+    if (tracked === 'green') return 'green';
+    return 'grey';
   };
 
-  // Project dot uses highest priority across its workers: red > blue > green
+  // Project dot uses highest priority across its workers: red > blue > green > grey
   const getProjectStatus = (projSessions) => {
     if (!projSessions.length) return null;
     const statuses = projSessions.map(getWorkerStatus);
     if (statuses.includes('red')) return 'red';
     if (statuses.includes('blue')) return 'blue';
-    return 'green';
+    if (statuses.includes('green')) return 'green';
+    return 'grey';
   };
 
   return (
@@ -196,6 +198,8 @@ export default function ProjectSidebar({
                       ? 'Turn completed'
                       : getProjectStatus(projSessions) === 'green'
                       ? 'Working'
+                      : getProjectStatus(projSessions) === 'grey'
+                      ? 'Idle / acknowledged'
                       : undefined
                   }
                 />
@@ -335,8 +339,10 @@ export default function ProjectSidebar({
                               workerStatus === 'red'
                                 ? 'Action required or failure'
                                 : workerStatus === 'blue'
-                                ? 'Turn completed'
-                                : 'Working'
+                                ? 'Turn completed (click to acknowledge)'
+                                : workerStatus === 'green'
+                                ? 'Working'
+                                : 'Idle / acknowledged'
                             }
                           />
                           <Terminal size={11} style={{ flexShrink: 0, opacity: 0.75 }} />

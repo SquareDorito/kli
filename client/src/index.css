@@ -1688,21 +1688,28 @@ textarea {
 
 .project-dot.status-red,
 .session-live-dot.status-red {
-  background: #ff5f5f;
-  box-shadow: 0 0 0 3px rgba(255, 95, 95, 0.25);
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
   animation: pulse-attention 1.4s infinite;
 }
 
 .project-dot.status-blue,
 .session-live-dot.status-blue {
-  background: #5fafff;
-  box-shadow: none;
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.28);
   animation: none;
 }
 
 .project-dot.status-green,
 .session-live-dot.status-green {
-  background: #5fd787;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.22);
+  animation: none;
+}
+
+.project-dot.status-grey,
+.session-live-dot.status-grey {
+  background: #6b7280;
   box-shadow: none;
   animation: none;
 }

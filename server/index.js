@@ -280,6 +280,11 @@ app.post('/api/sessions/:tmuxName/sync-usage', async (req, res) => {
   }
 });
 
+app.post('/api/sessions/:tmuxName/ack', (req, res) => {
+  const usage = usageTracker.acknowledgeSession(req.params.tmuxName);
+  res.json({ ok: true, usage });
+});
+
 // Git diff, file preview, ports, cross-worker messaging
 app.get('/api/projects/:id/git-diff', async (req, res) => {
   try {
@@ -440,10 +445,13 @@ wss.on('connection', async (ws, _request, url) => {
     return;
   }
 
+  const attachedAt = Date.now();
   ws.send(JSON.stringify({ type: 'ready', backend: ptyProc.backend, session: tmuxName }));
 
   ptyProc.onData((data) => {
-    usageTracker.ingestTerminalChunk(tmuxName, data, 'output');
+    usageTracker.ingestTerminalChunk(tmuxName, data, 'output', {
+      ignoreAttachBurst: Date.now() - attachedAt < 800,
+    });
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: 'output', data }));
     }

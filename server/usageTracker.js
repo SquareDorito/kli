@@ -52,6 +52,12 @@ function loadState() {
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(USAGE_FILE, 'utf-8'));
+    const rawSessions = parsed.sessions && typeof parsed.sessions === 'object' ? parsed.sessions : {};
+    for (const key of Object.keys(rawSessions)) {
+      if (rawSessions[key]?.status === 'green') {
+        rawSessions[key].status = 'grey';
+      }
+    }
     return {
       config: { ...DEFAULT_CONFIG, ...(parsed.config || {}) },
       events: Array.isArray(parsed.events) ? parsed.events : [],
@@ -65,7 +71,7 @@ function loadState() {
         updatedAt: 0,
         ...(parsed.parsedQuotas || {}),
       },
-      sessions: parsed.sessions && typeof parsed.sessions === 'object' ? parsed.sessions : {},
+      sessions: rawSessions,
     };
   } catch {
     return {
@@ -121,7 +127,7 @@ class UsageTracker extends EventEmitter {
         mode: null,
         compactions: 0,
         lastCompactAt: 0,
-        status: 'blue',
+        status: 'grey',
         lastRedAt: 0,
         source: 'estimated',
       };
@@ -154,8 +160,9 @@ class UsageTracker extends EventEmitter {
    * Parses live agy CLI output & /usage tables to automatically deduce
    * context window %, 5-hour quota %, and daily/weekly quota %.
    */
-  ingestTerminalChunk(tmuxName, rawChunk, direction = 'output') {
+  ingestTerminalChunk(tmuxName, rawChunk, direction = 'output', options = {}) {
     if (!tmuxName || !rawChunk) return;
+    const isAttachBurst = Boolean(options?.ignoreAttachBurst);
     const clean = stripAnsi(rawChunk);
     if (!clean.trim()) return;
 
@@ -282,8 +289,8 @@ class UsageTracker extends EventEmitter {
       changed = true;
     }
 
-    // 8. Lightweight token accounting (~4 chars per token)
-    const approxTokens = Math.max(0, Math.floor(clean.length / 4));
+    // 8. Lightweight token accounting (~4 chars per token) — skip initial tmux attach-session screen repaint
+    const approxTokens = isAttachBurst ? 0 : Math.max(0, Math.floor(clean.length / 4));
     if (approxTokens >= 6) {
       const weight = direction === 'input' ? 1.2 : 0.85;
       const delta = Math.round(approxTokens * weight);
@@ -315,20 +322,28 @@ class UsageTracker extends EventEmitter {
       }
     }
 
-    // 9. Worker status tracking: red (action required / failure) > blue (turn completed) > green (working)
+    // 9. Worker status tracking: red (action required / failure) > blue (turn completed) > green (working) > grey (idle/acknowledged)
     const now = Date.now();
     if (direction === 'input') {
-      if (this._idleTimers.has(tmuxName)) {
-        clearTimeout(this._idleTimers.get(tmuxName));
-        this._idleTimers.delete(tmuxName);
+      // Ignore terminal mouse clicks, focus-in/out events, and escape sequences so clicking into the terminal doesn't flash green
+      const isControlOrMouse = /^\x1b/.test(rawChunk);
+      const isSubmit = rawChunk.includes('\r') || rawChunk.includes('\n');
+      const shouldActivate =
+        !isControlOrMouse && (isSubmit || sess.status === 'red');
+
+      if (shouldActivate) {
+        if (this._idleTimers.has(tmuxName)) {
+          clearTimeout(this._idleTimers.get(tmuxName));
+          this._idleTimers.delete(tmuxName);
+        }
+        if (sess.status !== 'green' || sess.lastRedAt) {
+          sess.status = 'green';
+          sess.lastRedAt = 0;
+          this._scheduleSave();
+          this.emit('update', this.getSnapshot(tmuxName));
+        }
       }
-      if (sess.status !== 'green' || sess.lastRedAt) {
-        sess.status = 'green';
-        sess.lastRedAt = 0;
-        this._scheduleSave();
-        this.emit('update', this.getSnapshot(tmuxName));
-      }
-    } else if (direction === 'output') {
+    } else if (direction === 'output' && !isAttachBurst) {
       const approvalMatch = clean.match(
         /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Approve\s+(?:tool|command|action)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))/i
       );
@@ -358,27 +373,49 @@ class UsageTracker extends EventEmitter {
             ts: now,
           });
         }
-      } else if (now - (sess.lastRedAt || 0) > 1500 && clean.trim().length > 0) {
-        if (sess.status !== 'green') {
-          sess.status = 'green';
-          this._scheduleSave();
-          this.emit('update', this.getSnapshot(tmuxName));
-        }
-        if (this._idleTimers.has(tmuxName)) {
-          clearTimeout(this._idleTimers.get(tmuxName));
-        }
-        const timer = setTimeout(() => {
-          this._idleTimers.delete(tmuxName);
-          const cur = this.state.sessions[tmuxName];
-          if (cur && cur.status === 'green') {
-            cur.status = 'blue';
+      } else if (now - (sess.lastRedAt || 0) > 1500) {
+        const compactLen = clean.replace(/\s+/g, '').length;
+        const hasWorkingHint = /(?:Thought\s+for|esc\s+to\s+(?:cancel|interrupt)|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])/i.test(
+          clean
+        );
+        // Ignore small tmux status-bar ticks / focus redraws when already idle (grey/blue)
+        const shouldStartWork =
+          sess.status === 'green' ? compactLen >= 4 : hasWorkingHint || compactLen >= 120;
+
+        if (shouldStartWork) {
+          if (sess.status !== 'green') {
+            sess.status = 'green';
             this._scheduleSave();
             this.emit('update', this.getSnapshot(tmuxName));
           }
-        }, 2500);
-        this._idleTimers.set(tmuxName, timer);
+          if (this._idleTimers.has(tmuxName)) {
+            clearTimeout(this._idleTimers.get(tmuxName));
+          }
+          const timer = setTimeout(() => {
+            this._idleTimers.delete(tmuxName);
+            const cur = this.state.sessions[tmuxName];
+            if (cur && cur.status === 'green') {
+              cur.status = 'blue';
+              this._scheduleSave();
+              this.emit('update', this.getSnapshot(tmuxName));
+            }
+          }, 2500);
+          this._idleTimers.set(tmuxName, timer);
+        }
       }
     }
+  }
+
+  acknowledgeSession(tmuxName) {
+    const sess = this._ensureSession(tmuxName);
+    if (sess.status === 'blue') {
+      sess.status = 'grey';
+      this._scheduleSave();
+      const snap = this.getSnapshot(tmuxName);
+      this.emit('update', snap);
+      return snap;
+    }
+    return this.getSnapshot(tmuxName);
   }
 
   recordCompaction(tmuxName) {

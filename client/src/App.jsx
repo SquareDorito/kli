@@ -556,6 +556,14 @@ export default function App() {
       delete next[tmuxName];
       return next;
     });
+    if (usage?.sessions?.[tmuxName]?.status === 'blue') {
+      fetch(`/api/sessions/${encodeURIComponent(tmuxName)}/ack`, { method: 'POST' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.usage) setUsage(data.usage);
+        })
+        .catch(() => {});
+    }
   };
 
   const reorderIds = (keys, fromKey, toKey) => {
