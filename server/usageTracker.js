@@ -90,6 +90,7 @@ class UsageTracker extends EventEmitter {
     super();
     this.state = loadState();
     this._recentBuffers = new Map(); // tmuxName -> rolling stripped output for multi-line /usage parsing
+    this._idleTimers = new Map(); // tmuxName -> timer to mark turn completed (blue)
     this._saveTimer = null;
   }
 
@@ -99,7 +100,7 @@ class UsageTracker extends EventEmitter {
       this._saveTimer = null;
       try {
         ensureDataDir();
-        const cutoff = Date.now() - 2 * ONE_DAY_MS;
+        const cutoff = Date.now() - ONE_WEEK_MS;
         this.state.events = this.state.events.filter((e) => e.ts >= cutoff);
         fs.writeFileSync(USAGE_FILE, JSON.stringify(this.state, null, 2));
       } catch {
@@ -120,6 +121,8 @@ class UsageTracker extends EventEmitter {
         mode: null,
         compactions: 0,
         lastCompactAt: 0,
+        status: 'blue',
+        lastRedAt: 0,
         source: 'estimated',
       };
     }
@@ -312,24 +315,68 @@ class UsageTracker extends EventEmitter {
       }
     }
 
-    // 9. Detect approval prompts / waiting-for-input attention states
-    if (direction === 'output') {
-      const lastAttention = this._lastAttentionAt?.get(tmuxName) || 0;
-      const now = Date.now();
-      if (now - lastAttention > 15000) {
-        const approvalMatch = clean.match(
-          /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Approve\s+(?:tool|command|action)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))/i
-        );
-        if (approvalMatch) {
+    // 9. Worker status tracking: red (action required / failure) > blue (turn completed) > green (working)
+    const now = Date.now();
+    if (direction === 'input') {
+      if (this._idleTimers.has(tmuxName)) {
+        clearTimeout(this._idleTimers.get(tmuxName));
+        this._idleTimers.delete(tmuxName);
+      }
+      if (sess.status !== 'green' || sess.lastRedAt) {
+        sess.status = 'green';
+        sess.lastRedAt = 0;
+        this._scheduleSave();
+        this.emit('update', this.getSnapshot(tmuxName));
+      }
+    } else if (direction === 'output') {
+      const approvalMatch = clean.match(
+        /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Approve\s+(?:tool|command|action)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))/i
+      );
+      const failureMatch = clean.match(
+        /(?:\[agy exited|FATAL:|UnhandledRejection|command failed|exit code [1-9])/i
+      );
+      const redMatch = approvalMatch || failureMatch;
+
+      if (redMatch) {
+        if (this._idleTimers.has(tmuxName)) {
+          clearTimeout(this._idleTimers.get(tmuxName));
+          this._idleTimers.delete(tmuxName);
+        }
+        sess.status = 'red';
+        sess.lastRedAt = now;
+        this._scheduleSave();
+        this.emit('update', this.getSnapshot(tmuxName));
+
+        const lastAttention = this._lastAttentionAt?.get(tmuxName) || 0;
+        if (now - lastAttention > 15000) {
           if (!this._lastAttentionAt) this._lastAttentionAt = new Map();
           this._lastAttentionAt.set(tmuxName, now);
           this.emit('session-attention', {
             tmuxName,
-            kind: 'approval',
-            snippet: approvalMatch[0],
+            kind: approvalMatch ? 'approval' : 'failure',
+            snippet: redMatch[0],
             ts: now,
           });
         }
+      } else if (now - (sess.lastRedAt || 0) > 1500 && clean.trim().length > 0) {
+        if (sess.status !== 'green') {
+          sess.status = 'green';
+          this._scheduleSave();
+          this.emit('update', this.getSnapshot(tmuxName));
+        }
+        if (this._idleTimers.has(tmuxName)) {
+          clearTimeout(this._idleTimers.get(tmuxName));
+        }
+        const timer = setTimeout(() => {
+          this._idleTimers.delete(tmuxName);
+          const cur = this.state.sessions[tmuxName];
+          if (cur && cur.status === 'green') {
+            cur.status = 'blue';
+            this._scheduleSave();
+            this.emit('update', this.getSnapshot(tmuxName));
+          }
+        }, 2500);
+        this._idleTimers.set(tmuxName, timer);
       }
     }
   }

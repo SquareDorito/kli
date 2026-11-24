@@ -638,6 +638,7 @@ export default function App() {
           width={sidebarWidth}
           projects={orderedProjects}
           sessions={orderedSessions}
+          usage={usage}
           selectedProjectId={selectedProjectId}
           activeSessionName={activeSessionName}
           envHealth={envHealth}

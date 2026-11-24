@@ -18,6 +18,7 @@ export default function ProjectSidebar({
   width,
   projects,
   sessions,
+  usage,
   selectedProjectId,
   activeSessionName,
   envHealth,
@@ -71,6 +72,23 @@ export default function ProjectSidebar({
   const orphanSessions = sessions.filter(
     (s) => !projects.some((p) => p.id === s.projectId || (!s.projectId && p.path === s.projectPath))
   );
+
+  // Worker status: 'red' (action/failure) > 'blue' (turn completed) > 'green' (working)
+  const getWorkerStatus = (sess) => {
+    const tracked = usage?.sessions?.[sess.tmuxName]?.status;
+    if (tracked === 'red' || attentionSessions[sess.tmuxName]) return 'red';
+    if (tracked === 'blue') return 'blue';
+    return 'green';
+  };
+
+  // Project dot uses highest priority across its workers: red > blue > green
+  const getProjectStatus = (projSessions) => {
+    if (!projSessions.length) return null;
+    const statuses = projSessions.map(getWorkerStatus);
+    if (statuses.includes('red')) return 'red';
+    if (statuses.includes('blue')) return 'blue';
+    return 'green';
+  };
 
   return (
     <aside className="sidebar" style={width ? { width } : undefined}>
@@ -163,8 +181,23 @@ export default function ProjectSidebar({
                   <ChevronDown size={13} color="var(--text-muted)" />
                 )}
                 <span
-                  className="project-dot"
-                  style={{ background: project.color || 'var(--accent-primary)' }}
+                  className={`project-dot ${
+                    getProjectStatus(projSessions) ? `status-${getProjectStatus(projSessions)}` : ''
+                  }`}
+                  style={
+                    getProjectStatus(projSessions)
+                      ? undefined
+                      : { background: project.color || 'var(--accent-primary)' }
+                  }
+                  title={
+                    getProjectStatus(projSessions) === 'red'
+                      ? 'Action required or failure'
+                      : getProjectStatus(projSessions) === 'blue'
+                      ? 'Turn completed'
+                      : getProjectStatus(projSessions) === 'green'
+                      ? 'Working'
+                      : undefined
+                  }
                 />
                 <div className="project-name-wrap">
                   {isEditingProj ? (
@@ -250,7 +283,7 @@ export default function ProjectSidebar({
                 <div className="session-list">
                   {projSessions.map((sess) => {
                     const isActive = sess.tmuxName === activeSessionName;
-                    const needsAttention = Boolean(attentionSessions[sess.tmuxName]);
+                    const workerStatus = getWorkerStatus(sess);
                     const ports = portsBySession[sess.tmuxName] || [];
                     // Prefix worker name with project alias (or project name)
                     let workerSuffix = sess.label;
@@ -297,7 +330,14 @@ export default function ProjectSidebar({
                           onClick={() => onSelectSession(sess.tmuxName)}
                         >
                           <span
-                            className={`session-live-dot ${needsAttention ? 'attention' : ''}`}
+                            className={`session-live-dot status-${workerStatus}`}
+                            title={
+                              workerStatus === 'red'
+                                ? 'Action required or failure'
+                                : workerStatus === 'blue'
+                                ? 'Turn completed'
+                                : 'Working'
+                            }
                           />
                           <Terminal size={11} style={{ flexShrink: 0, opacity: 0.75 }} />
                           <span className="session-label" title={sess.tmuxName}>
@@ -368,13 +408,15 @@ export default function ProjectSidebar({
               <span>Other tmux sessions</span>
             </div>
             <div className="session-list" style={{ paddingLeft: 4 }}>
-              {orphanSessions.map((sess) => (
-                <div
-                  key={sess.tmuxName}
-                  className={`session-item ${sess.tmuxName === activeSessionName ? 'active' : ''}`}
-                  onClick={() => onSelectSession(sess.tmuxName)}
-                >
-                  <span className="session-live-dot" />
+              {orphanSessions.map((sess) => {
+                const workerStatus = getWorkerStatus(sess);
+                return (
+                  <div
+                    key={sess.tmuxName}
+                    className={`session-item ${sess.tmuxName === activeSessionName ? 'active' : ''}`}
+                    onClick={() => onSelectSession(sess.tmuxName)}
+                  >
+                    <span className={`session-live-dot status-${workerStatus}`} />
                   <Terminal size={12} />
                   <span className="session-label">{sess.label}</span>
                   <button
@@ -388,7 +430,8 @@ export default function ProjectSidebar({
                     <X size={11} />
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

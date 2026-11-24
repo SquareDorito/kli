@@ -1685,3 +1685,24 @@ textarea {
   outline: 1.5px dashed var(--accent-primary);
   background: var(--bg-hover);
 }
+
+.project-dot.status-red,
+.session-live-dot.status-red {
+  background: #ff5f5f;
+  box-shadow: 0 0 0 3px rgba(255, 95, 95, 0.25);
+  animation: pulse-attention 1.4s infinite;
+}
+
+.project-dot.status-blue,
+.session-live-dot.status-blue {
+  background: #5fafff;
+  box-shadow: none;
+  animation: none;
+}
+
+.project-dot.status-green,
+.session-live-dot.status-green {
+  background: #5fd787;
+  box-shadow: none;
+  animation: none;
+}

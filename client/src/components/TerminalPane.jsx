@@ -523,7 +523,13 @@ export default function TerminalPane({
           {sessions.map((sess) => {
             const isActive = sess.tmuxName === activeSession.tmuxName;
             const isEditing = editingTab === sess.tmuxName;
-            const needsAttention = Boolean(attentionSessions[sess.tmuxName]);
+            const trackedStatus = usage?.sessions?.[sess.tmuxName]?.status;
+            const workerStatus =
+              trackedStatus === 'red' || attentionSessions[sess.tmuxName]
+                ? 'red'
+                : trackedStatus === 'blue'
+                ? 'blue'
+                : 'green';
             return (
               <div
                 key={sess.tmuxName}
@@ -545,7 +551,7 @@ export default function TerminalPane({
                 }}
                 title="Double-click to rename · Drag to reorder"
               >
-                <span className={`session-live-dot ${needsAttention ? 'attention' : ''}`} />
+                <span className={`session-live-dot status-${workerStatus}`} />
                 {isEditing ? (
                   <input
                     type="text"
