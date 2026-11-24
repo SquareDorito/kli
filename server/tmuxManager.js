@@ -386,6 +386,68 @@ export async function restartTmuxSession(tmuxName) {
   return { restarted: tmuxName, target };
 }
 
+/**
+ * Inspects the bottom lines of each live tmux session's active/agy pane
+ * to reconcile stale 'green' / 'red' statuses on page load or manual refresh.
+ */
+export async function reconcileSessionStatuses(sessions, usageTracker) {
+  if (!Array.isArray(sessions) || !sessions.length || !usageTracker) return;
+  const snap = usageTracker.getSnapshot();
+  await Promise.all(
+    sessions.map(async (sess) => {
+      try {
+        const target = await resolveTargetPane(sess.tmuxName, true);
+        const { stdout } = await execFileAsync(
+          'tmux',
+          ['capture-pane', '-p', '-t', target, '-S', '-25'],
+          { timeout: 1500 }
+        );
+        const lines = stdout
+          .split('\n')
+          .map((l) => l.trimEnd())
+          .filter(Boolean);
+        const tail = lines.slice(-12).join('\n');
+        const bottom = lines.slice(-4).join('\n');
+        const curStatus = snap.sessions?.[sess.tmuxName]?.status || 'grey';
+
+        const isWorking = /(?:esc\s+to\s+(?:cancel|interrupt)|[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏])/i.test(tail);
+        if (isWorking) {
+          if (curStatus !== 'green') {
+            usageTracker.setSessionStatus(sess.tmuxName, 'green', { source: 'reconcile' });
+          }
+          return;
+        }
+
+        const isIdlePrompt =
+          /\?\s+for\s+shortcuts/i.test(bottom) ||
+          /^(?:zsh|bash|fish)$/i.test(sess.currentCommand || '');
+
+        const isRed =
+          !isIdlePrompt &&
+          /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval)|\[agy exited —)/i.test(
+            bottom
+          );
+        if (isRed) {
+          if (curStatus !== 'red') {
+            usageTracker.setSessionStatus(sess.tmuxName, 'red', { source: 'reconcile' });
+          }
+          return;
+        }
+
+        if (isIdlePrompt && (curStatus === 'green' || curStatus === 'red')) {
+          usageTracker.setSessionStatus(
+            sess.tmuxName,
+            curStatus === 'green' ? 'blue' : 'grey',
+            { source: 'reconcile' }
+          );
+        }
+      } catch {
+        // ignore transient capture errors
+      }
+    })
+  );
+}
+
 async function resolveTargetPane(tmuxName, preferAgy = false) {
   if (!preferAgy) return tmuxName;
   try {

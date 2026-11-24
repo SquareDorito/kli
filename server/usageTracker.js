@@ -346,10 +346,10 @@ class UsageTracker extends EventEmitter {
       }
     } else if (direction === 'output' && !isAttachBurst) {
       const approvalMatch = clean.match(
-        /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Approve\s+(?:tool|command|action)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))/i
+        /(?:^|\n)\s*(?:[❯>●│┃]?\s*)?(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))\s*(?:\n|$)/i
       );
       const failureMatch = clean.match(
-        /(?:\[agy exited|FATAL:|UnhandledRejection|command failed|exit code [1-9])/i
+        /(?:^|\n)\s*(?:\[agy exited —|FATAL:|UnhandledRejection:)/i
       );
       const redMatch = approvalMatch || failureMatch;
 

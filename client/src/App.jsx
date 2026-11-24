@@ -156,7 +156,7 @@ export default function App() {
       setProjects(nextProjects);
       setSessions(nextSessions);
       setEnvHealth(healthData.env || null);
-      setUsage(usageData);
+      setUsage(projData.usage || usageData);
       setPortsBySession(portsData.ports || {});
 
       setSelectedProjectId((prev) => {

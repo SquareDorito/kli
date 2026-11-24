@@ -29,6 +29,7 @@ import {
   getWorkerMessages,
   sendWorkerMessage,
   getListeningPortsForSessions,
+  reconcileSessionStatuses,
   getTmuxConfigPath,
 } from './tmuxManager.js';
 import {
@@ -111,7 +112,8 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/projects', async (_req, res) => {
   try {
     const [projects, sessions] = await Promise.all([listProjects(), listTmuxSessions()]);
-    res.json({ projects, sessions });
+    await reconcileSessionStatuses(sessions, usageTracker);
+    res.json({ projects, sessions, usage: usageTracker.getSnapshot() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
