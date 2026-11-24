@@ -285,6 +285,16 @@ app.post('/api/sessions/:tmuxName/ack', (req, res) => {
   res.json({ ok: true, usage });
 });
 
+app.post('/api/sessions/:tmuxName/status', (req, res) => {
+  try {
+    const { status, source } = req.body || {};
+    const usage = usageTracker.setSessionStatus(req.params.tmuxName, status, { source });
+    res.json({ ok: true, usage });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Git diff, file preview, ports, cross-worker messaging
 app.get('/api/projects/:id/git-diff', async (req, res) => {
   try {

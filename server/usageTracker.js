@@ -129,6 +129,7 @@ class UsageTracker extends EventEmitter {
         lastCompactAt: 0,
         status: 'grey',
         lastRedAt: 0,
+        lastHookAt: 0,
         source: 'estimated',
       };
     }
@@ -390,17 +391,23 @@ class UsageTracker extends EventEmitter {
           }
           if (this._idleTimers.has(tmuxName)) {
             clearTimeout(this._idleTimers.get(tmuxName));
-          }
-          const timer = setTimeout(() => {
             this._idleTimers.delete(tmuxName);
-            const cur = this.state.sessions[tmuxName];
-            if (cur && cur.status === 'green') {
-              cur.status = 'blue';
-              this._scheduleSave();
-              this.emit('update', this.getSnapshot(tmuxName));
-            }
-          }, 2500);
-          this._idleTimers.set(tmuxName, timer);
+          }
+          // When agy hooks are actively driving this session, let the Stop hook flip green -> blue
+          // instead of a short PTY silence timeout during LLM thinking pauses.
+          const hooksActive = now - (sess.lastHookAt || 0) < 120000;
+          if (!hooksActive) {
+            const timer = setTimeout(() => {
+              this._idleTimers.delete(tmuxName);
+              const cur = this.state.sessions[tmuxName];
+              if (cur && cur.status === 'green') {
+                cur.status = 'blue';
+                this._scheduleSave();
+                this.emit('update', this.getSnapshot(tmuxName));
+              }
+            }, 15000);
+            this._idleTimers.set(tmuxName, timer);
+          }
         }
       }
     }
@@ -416,6 +423,30 @@ class UsageTracker extends EventEmitter {
       return snap;
     }
     return this.getSnapshot(tmuxName);
+  }
+
+  setSessionStatus(tmuxName, status, { source = 'hook' } = {}) {
+    if (!['red', 'blue', 'green', 'grey'].includes(status)) {
+      throw new Error(`Invalid status: ${status}`);
+    }
+    const sess = this._ensureSession(tmuxName);
+    if (this._idleTimers.has(tmuxName)) {
+      clearTimeout(this._idleTimers.get(tmuxName));
+      this._idleTimers.delete(tmuxName);
+    }
+    if (source === 'hook') {
+      sess.lastHookAt = Date.now();
+    }
+    // Preserve 'red' failure/approval state if a Stop hook fires right after an error
+    if (status === 'blue' && sess.status === 'red' && Date.now() - (sess.lastRedAt || 0) < 5000) {
+      return this.getSnapshot(tmuxName);
+    }
+    sess.status = status;
+    sess.lastRedAt = status === 'red' ? Date.now() : 0;
+    this._scheduleSave();
+    const snap = this.getSnapshot(tmuxName);
+    this.emit('update', snap);
+    return snap;
   }
 
   recordCompaction(tmuxName) {
