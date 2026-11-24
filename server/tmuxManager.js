@@ -406,8 +406,19 @@ export async function reconcileSessionStatuses(sessions, usageTracker) {
           .split('\n')
           .map((l) => l.trimEnd())
           .filter(Boolean);
-        const bottom = lines.slice(-3).join('\n');
+        const bottom = lines.slice(-5).join('\n');
         const curStatus = snap.sessions?.[sess.tmuxName]?.status || 'grey';
+
+        const isRed =
+          /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval)|Enter to submit|Space to select|↑\/↓ to (?:navigate|select)|\[agy exited —)/i.test(
+            bottom
+          );
+        if (isRed) {
+          if (curStatus !== 'red') {
+            usageTracker.setSessionStatus(sess.tmuxName, 'red', { source: 'reconcile' });
+          }
+          return;
+        }
 
         const isIdlePrompt =
           /\?\s+for\s+shortcuts/i.test(bottom) ||
@@ -430,14 +441,6 @@ export async function reconcileSessionStatuses(sessions, usageTracker) {
             usageTracker.setSessionStatus(sess.tmuxName, 'green', { source: 'reconcile' });
           }
           return;
-        }
-
-        const isRed =
-          /(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval)|\[agy exited —)/i.test(
-            bottom
-          );
-        if (isRed && curStatus !== 'red') {
-          usageTracker.setSessionStatus(sess.tmuxName, 'red', { source: 'reconcile' });
         }
       } catch {
         // ignore transient capture errors

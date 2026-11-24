@@ -346,7 +346,7 @@ class UsageTracker extends EventEmitter {
       }
     } else if (direction === 'output' && !isAttachBurst) {
       const approvalMatch = clean.match(
-        /(?:^|\n)\s*(?:[❯>●│┃]?\s*)?(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval))\s*(?:\n|$)/i
+        /(?:^|\n)\s*(?:[❯>●│┃]?\s*)?(?:\[y\/N\]|\[Y\/n\]|\(y\/n\)|Allow\s+(?:once|always)|Press Enter to continue|Waiting for (?:user|approval)|Enter to submit|Space to select|↑\/↓ to (?:navigate|select))/i
       );
       const failureMatch = clean.match(
         /(?:^|\n)\s*(?:\[agy exited —|FATAL:|UnhandledRejection:)/i
