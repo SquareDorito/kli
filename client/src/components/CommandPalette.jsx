@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Sliders,
+  Server,
 } from 'lucide-react';
 
 export default function CommandPalette({
@@ -26,6 +27,7 @@ export default function CommandPalette({
   onToggleTheme,
   onToggleGitDiff,
   onToggleUsageHistory,
+  onToggleLocalServers,
   onOpenMessaging,
   onOpenSettings,
   onSendSlashCommand,
@@ -74,6 +76,14 @@ export default function CommandPalette({
         hint: 'Send prompt to another worker',
         icon: MessageSquare,
         run: () => onOpenMessaging(),
+      },
+      {
+        id: 'act-local-servers',
+        group: 'Actions',
+        title: 'Toggle Local Servers & Ports Drawer',
+        hint: 'Manage apps in KLI, external tmux & localhost ports',
+        icon: Server,
+        run: () => onToggleLocalServers?.(),
       },
       {
         id: 'act-git-diff',

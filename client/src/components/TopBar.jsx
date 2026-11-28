@@ -6,6 +6,7 @@ import {
   Moon,
   GitBranch,
   BarChart3,
+  Server,
 } from 'lucide-react';
 import CircularTracker from './CircularTracker.jsx';
 
@@ -32,12 +33,14 @@ export default function TopBar({
   theme,
   showGitDiff,
   showUsageHistory,
+  showLocalServers,
   onToggleTheme,
   onToggleAutocompact,
   onManualCompact,
   onSyncUsage,
   onToggleGitDiff,
   onToggleUsageHistory,
+  onToggleLocalServers,
   onOpenMessaging,
   onOpenPalette,
   onOpenSettings,
@@ -117,6 +120,14 @@ export default function TopBar({
       </div>
 
       <div className="topbar-actions">
+        <button
+          type="button"
+          className={`icon-btn ${showLocalServers ? 'active' : ''}`}
+          onClick={onToggleLocalServers}
+          title="Local Servers, Ports & External Tmux"
+        >
+          <Server size={15} />
+        </button>
         <button
           type="button"
           className={`icon-btn ${showGitDiff ? 'active' : ''}`}

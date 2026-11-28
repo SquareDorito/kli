@@ -9,6 +9,7 @@ import UsageSettingsModal from './components/UsageSettingsModal.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
 import GitDiffDrawer from './components/GitDiffDrawer.jsx';
 import UsageHistoryDrawer from './components/UsageHistoryDrawer.jsx';
+import LocalServersDrawer from './components/LocalServersDrawer.jsx';
 import WorkerMessagingModal from './components/WorkerMessagingModal.jsx';
 import FilePreviewModal from './components/FilePreviewModal.jsx';
 import AuthGateModal from './components/AuthGateModal.jsx';
@@ -48,6 +49,7 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false);
   const [showGitDiff, setShowGitDiff] = useState(false);
   const [showUsageHistory, setShowUsageHistory] = useState(false);
+  const [showLocalServers, setShowLocalServers] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
   const [filePreviewTarget, setFilePreviewTarget] = useState(null);
   const [attentionSessions, setAttentionSessions] = useState({});
@@ -94,6 +96,11 @@ export default function App() {
     } catch {
       // ignore
     }
+    fetch('/api/theme', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme }),
+    }).catch(() => {});
   }, [theme]);
 
   useEffect(() => {
@@ -236,6 +243,12 @@ export default function App() {
           e.preventDefault();
           e.stopPropagation();
           setShowUsageHistory(false);
+          return;
+        }
+        if (showLocalServers) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowLocalServers(false);
           return;
         }
       }
@@ -675,6 +688,7 @@ export default function App() {
         theme={theme}
         showGitDiff={showGitDiff}
         showUsageHistory={showUsageHistory}
+        showLocalServers={showLocalServers}
         onToggleTheme={toggleTheme}
         onToggleAutocompact={handleToggleAutocompact}
         onManualCompact={handleManualCompact}
@@ -682,10 +696,17 @@ export default function App() {
         onToggleGitDiff={() => {
           setShowGitDiff((v) => !v);
           setShowUsageHistory(false);
+          setShowLocalServers(false);
         }}
         onToggleUsageHistory={() => {
           setShowUsageHistory((v) => !v);
           setShowGitDiff(false);
+          setShowLocalServers(false);
+        }}
+        onToggleLocalServers={() => {
+          setShowLocalServers((v) => !v);
+          setShowGitDiff(false);
+          setShowUsageHistory(false);
         }}
         onOpenMessaging={() => setShowMessaging(true)}
         onOpenPalette={() => setShowPalette(true)}
@@ -766,6 +787,20 @@ export default function App() {
           projects={projects}
           onClose={() => setShowUsageHistory(false)}
         />
+
+        <LocalServersDrawer
+          open={showLocalServers}
+          projects={projects}
+          onClose={() => setShowLocalServers(false)}
+          onFocusSession={(tmuxName) => {
+            handleSelectSession(tmuxName);
+          }}
+          onAdoptedSession={async (tmuxName) => {
+            await refreshAll();
+            if (tmuxName) handleSelectSession(tmuxName);
+          }}
+          onToast={showToast}
+        />
       </div>
 
       {showNewSession && (
@@ -812,10 +847,17 @@ export default function App() {
         onToggleGitDiff={() => {
           setShowGitDiff((v) => !v);
           setShowUsageHistory(false);
+          setShowLocalServers(false);
         }}
         onToggleUsageHistory={() => {
           setShowUsageHistory((v) => !v);
           setShowGitDiff(false);
+          setShowLocalServers(false);
+        }}
+        onToggleLocalServers={() => {
+          setShowLocalServers((v) => !v);
+          setShowGitDiff(false);
+          setShowUsageHistory(false);
         }}
         onOpenMessaging={() => setShowMessaging(true)}
         onOpenSettings={() => setShowUsageSettings(true)}

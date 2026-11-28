@@ -9,6 +9,8 @@ import { slugify } from './projects.js';
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TMUX_CONF = path.join(__dirname, 'tmux', 'kli-tmux.conf');
+const TMUX_LIGHT_CONF = path.join(__dirname, 'tmux', 'kli-tmux-light.conf');
+let currentTmuxTheme = 'dark';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const SESSIONS_META_FILE = path.join(DATA_DIR, 'sessions.json');
 
@@ -277,6 +279,9 @@ export async function createTmuxSession({
   // Also apply config to running server in case tmux server was already started earlier
   try {
     await execFileAsync('tmux', ['source-file', TMUX_CONF], { timeout: 2000 });
+    if (currentTmuxTheme === 'light') {
+      await execFileAsync('tmux', ['source-file', TMUX_LIGHT_CONF], { timeout: 2000 });
+    }
   } catch {
     // ignore
   }
@@ -643,4 +648,306 @@ export async function getListeningPortsForSessions(sessions) {
 
 export function getTmuxConfigPath() {
   return TMUX_CONF;
+}
+
+const SYSTEM_DAEMON_RE =
+  /^(ControlCe|ControlCenter|rapportd|AirPlayXP|AirPlayUIAgent|mDNSResponder|sharingd|identityservicesd|symptomsd|WindowServer|apsd|bluetoothd|cloudd|coreservicesd|distnoted|UserEventAgent|loginwindow|launchd|systemd|Spotify|Dropbox|OneDrive|Raycast|Alfred|1Password|Tailscale|tailscaled)$/i;
+
+export async function listAllLocalServers() {
+  const metaAll = loadSessionMeta();
+
+  let panes = [];
+  let tmuxSessions = [];
+  try {
+    const [{ stdout: panesOut }, { stdout: sessOut }] = await Promise.all([
+      execFileAsync(
+        'tmux',
+        [
+          'list-panes',
+          '-a',
+          '-F',
+          '#{session_name}\t#{window_index}\t#{window_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_pid}',
+        ],
+        { timeout: 2500 }
+      ),
+      execFileAsync(
+        'tmux',
+        [
+          'list-sessions',
+          '-F',
+          '#{session_name}\t#{session_attached}\t#{session_windows}\t#{pane_current_path}\t#{pane_current_command}',
+        ],
+        { timeout: 2500 }
+      ),
+    ]);
+    panes = panesOut
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [sessionName, windowIndex, windowName, paneId, command, currentPath, pid] =
+          l.split('\t');
+        return {
+          sessionName,
+          windowIndex: Number(windowIndex || 1),
+          windowName: windowName || '',
+          paneId,
+          command: command || '',
+          currentPath: currentPath || '',
+          pid: pid ? Number(pid) : null,
+        };
+      });
+    tmuxSessions = sessOut
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const [sessionName, attached, windows, currentPath, currentCommand] = l.split('\t');
+        return {
+          tmuxName: sessionName,
+          isKli: sessionName.startsWith(SESSION_PREFIX),
+          attached: attached === '1',
+          windows: Number(windows || 1),
+          currentPath: currentPath || '',
+          currentCommand: currentCommand || '',
+        };
+      });
+  } catch {
+    // No tmux server running
+  }
+
+  let psOut = '';
+  let lsofOut = '';
+  try {
+    const [psRes, lsofRes] = await Promise.all([
+      execFileAsync('ps', ['-eo', 'pid=,ppid=,args='], { timeout: 2500, maxBuffer: 4 * 1024 * 1024 }),
+      execFileAsync('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN'], {
+        timeout: 2500,
+        maxBuffer: 4 * 1024 * 1024,
+      }),
+    ]);
+    psOut = psRes.stdout;
+    lsofOut = lsofRes.stdout;
+  } catch {
+    return { servers: [], externalTmux: [], kliPid: process.pid };
+  }
+
+  const childrenMap = new Map();
+  const pidArgsMap = new Map();
+  for (const line of psOut.split('\n')) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const ppid = Number(match[2]);
+    const args = match[3] || '';
+    pidArgsMap.set(pid, args);
+    if (!childrenMap.has(ppid)) childrenMap.set(ppid, []);
+    childrenMap.get(ppid).push(pid);
+  }
+
+  const pidToPane = new Map();
+  for (const pane of panes) {
+    if (!pane.pid) continue;
+    const queue = [pane.pid];
+    const visited = new Set([pane.pid]);
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      if (!pidToPane.has(cur)) pidToPane.set(cur, pane);
+      for (const child of childrenMap.get(cur) || []) {
+        if (!visited.has(child)) {
+          visited.add(child);
+          queue.push(child);
+        }
+      }
+    }
+  }
+
+  const rawListeners = [];
+  const listeningPids = new Set();
+  for (const line of lsofOut.split('\n').slice(1)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 9) continue;
+    const command = parts[0];
+    const pid = Number(parts[1]);
+    const nameCol = parts[8] || '';
+    const portMatch = nameCol.match(/^(.*):(\d+)$/);
+    if (!portMatch) continue;
+    const hostRaw = portMatch[1].replace(/^\[|\]$/g, '');
+    const port = Number(portMatch[2]);
+    if (!Number.isFinite(port) || port >= 49152) continue;
+    listeningPids.add(pid);
+    rawListeners.push({ command, pid, hostRaw, port });
+  }
+
+  const pidCwdMap = new Map();
+  if (listeningPids.size > 0) {
+    try {
+      const pidList = Array.from(listeningPids).join(',');
+      const { stdout: cwdOut } = await execFileAsync(
+        'lsof',
+        ['-nP', '-a', '-d', 'cwd', '-Fn', '-p', pidList],
+        { timeout: 2500, maxBuffer: 2 * 1024 * 1024 }
+      );
+      let currentPid = null;
+      for (const line of cwdOut.split('\n')) {
+        if (line.startsWith('p')) {
+          currentPid = Number(line.slice(1));
+        } else if (line.startsWith('n') && currentPid) {
+          pidCwdMap.set(currentPid, line.slice(1));
+        }
+      }
+    } catch {
+      // ignore cwd lookup errors
+    }
+  }
+
+  const deduped = new Map();
+  for (const item of rawListeners) {
+    const key = `${item.pid}:${item.port}`;
+    const hostLabel =
+      item.hostRaw === '*' || item.hostRaw === '0.0.0.0' || item.hostRaw === '::'
+        ? '0.0.0.0'
+        : item.hostRaw === '127.0.0.1' || item.hostRaw === '::1'
+          ? 'localhost'
+          : item.hostRaw;
+    if (deduped.has(key)) {
+      const existing = deduped.get(key);
+      if (!existing.hosts.includes(hostLabel)) existing.hosts.push(hostLabel);
+      continue;
+    }
+
+    const pane = pidToPane.get(item.pid) || null;
+    const isKli = Boolean(pane?.sessionName?.startsWith(SESSION_PREFIX));
+    const meta = pane?.sessionName ? metaAll[pane.sessionName] || {} : {};
+    const sourceType = pane ? (isKli ? 'kli' : 'tmux') : 'standalone';
+    const cwd = pidCwdMap.get(item.pid) || pane?.currentPath || '';
+    const args = pidArgsMap.get(item.pid) || item.command;
+    const isSystem = !pane && SYSTEM_DAEMON_RE.test(item.command);
+
+    deduped.set(key, {
+      id: key,
+      pid: item.pid,
+      port: item.port,
+      command: item.command,
+      args,
+      cwd,
+      hosts: [hostLabel],
+      url: `http://localhost:${item.port}`,
+      sourceType,
+      isSystem,
+      isSelf: item.pid === process.pid,
+      tmuxName: pane?.sessionName || null,
+      tmuxLabel: isKli ? meta.label || pane.sessionName.replace(/^kli_/, '') : pane?.sessionName || null,
+      projectId: meta.projectId || null,
+      windowIndex: pane?.windowIndex ?? null,
+      windowName: pane?.windowName || null,
+      paneId: pane?.paneId || null,
+    });
+  }
+
+  const servers = Array.from(deduped.values()).sort((a, b) => {
+    if (a.isSystem !== b.isSystem) return a.isSystem ? 1 : -1;
+    return a.port - b.port;
+  });
+
+  const portsByExternalTmux = new Map();
+  for (const srv of servers) {
+    if (srv.sourceType === 'tmux' && srv.tmuxName) {
+      if (!portsByExternalTmux.has(srv.tmuxName)) portsByExternalTmux.set(srv.tmuxName, []);
+      portsByExternalTmux.get(srv.tmuxName).push({ port: srv.port, command: srv.command });
+    }
+  }
+
+  const externalTmux = tmuxSessions
+    .filter((s) => !s.isKli)
+    .map((s) => ({
+      ...s,
+      ports: portsByExternalTmux.get(s.tmuxName) || [],
+    }));
+
+  return { servers, externalTmux, kliPid: process.pid };
+}
+
+export async function killLocalServer(pid, signal = 'SIGTERM') {
+  const numPid = Number(pid);
+  if (!Number.isInteger(numPid) || numPid <= 1) {
+    throw new Error('Invalid PID');
+  }
+  if (numPid === process.pid || numPid === process.ppid) {
+    throw new Error('Refusing to kill KLI server process');
+  }
+  const sig = signal === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM';
+  process.kill(numPid, sig);
+  return { ok: true, pid: numPid, signal: sig };
+}
+
+export async function adoptExternalTmuxSession(tmuxName, projectId = null) {
+  if (!tmuxName || tmuxName.startsWith(SESSION_PREFIX)) {
+    throw new Error('Provide a non-KLI tmux session name');
+  }
+  const { stdout } = await execFileAsync(
+    'tmux',
+    [
+      'list-panes',
+      '-t',
+      tmuxName,
+      '-F',
+      '#{pane_current_path}\t#{pane_current_command}',
+    ],
+    { timeout: 2000 }
+  );
+  const firstLine = stdout.split('\n')[0]?.trim() || '';
+  const [currentPath, currentCommand] = firstLine.split('\t');
+  const newTmuxName = `${SESSION_PREFIX}${slugify(tmuxName)}_${crypto.randomBytes(2).toString('hex')}`;
+  await execFileAsync('tmux', ['rename-session', '-t', tmuxName, newTmuxName], { timeout: 2000 });
+  try {
+    await execFileAsync('tmux', ['source-file', TMUX_CONF], { timeout: 2000 });
+    if (currentTmuxTheme === 'light') {
+      await execFileAsync('tmux', ['source-file', TMUX_LIGHT_CONF], { timeout: 2000 });
+    }
+  } catch {
+    // ignore
+  }
+  const meta = updateSessionMeta(newTmuxName, {
+    tmuxName: newTmuxName,
+    label: tmuxName,
+    projectId: projectId || null,
+    projectPath: currentPath || process.cwd(),
+    kind: /agy/i.test(currentCommand || '') ? 'agy' : 'shell',
+    createdAt: new Date().toISOString(),
+  });
+  return meta;
+}
+
+export async function killExternalTmuxSession(tmuxName) {
+  if (!tmuxName || tmuxName.startsWith(SESSION_PREFIX)) {
+    throw new Error('Refusing to kill KLI session via external endpoint');
+  }
+  await execFileAsync('tmux', ['kill-session', '-t', tmuxName], { timeout: 2000 });
+  return { ok: true, tmuxName };
+}
+
+export async function applyTmuxTheme(theme = 'dark') {
+  currentTmuxTheme = theme === 'light' ? 'light' : 'dark';
+  try {
+    await execFileAsync('tmux', ['source-file', TMUX_CONF], { timeout: 2000 });
+    if (currentTmuxTheme === 'light') {
+      await execFileAsync('tmux', ['source-file', TMUX_LIGHT_CONF], { timeout: 2000 });
+    }
+    const { stdout } = await execFileAsync('tmux', ['list-clients', '-F', '#{client_name}'], {
+      timeout: 1500,
+    });
+    const clients = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    await Promise.all(
+      clients.map((client) =>
+        execFileAsync('tmux', ['refresh-client', '-t', client], { timeout: 1500 }).catch(() => {})
+      )
+    );
+  } catch {
+    // No tmux server running yet; currentTmuxTheme will be applied on session creation
+  }
+  return currentTmuxTheme;
 }

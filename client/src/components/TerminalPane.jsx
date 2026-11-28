@@ -618,52 +618,6 @@ export default function TerminalPane({
         <div className="terminal-quick-actions">
           <button
             type="button"
-            className="slash-pill"
-            onClick={() => {
-              const sock = wsRef.current;
-              if (sock && sock.readyState === WebSocket.OPEN) {
-                sock.send(JSON.stringify({ type: 'input', data: '\x1b' }));
-              }
-              xtermRef.current?.focus();
-            }}
-            title="Send Esc (\x1b) to terminal (useful if Vimium intercepts Esc) · Shortcut: Ctrl+["
-          >
-            Esc
-          </button>
-          <button
-            type="button"
-            className="slash-pill"
-            onClick={() => onSendSlashCommand('/usage')}
-            title="Run /usage in agy to sync quota & context trackers"
-          >
-            /usage
-          </button>
-          <button
-            type="button"
-            className="slash-pill"
-            onClick={() => onSendSlashCommand('/compact')}
-            title="Send /compact to agy"
-          >
-            /compact
-          </button>
-          <button
-            type="button"
-            className="slash-pill"
-            onClick={() => onSendSlashCommand('/help')}
-            title="Send /help to agy"
-          >
-            /help
-          </button>
-          <button
-            type="button"
-            className="slash-pill"
-            onClick={() => onSendSlashCommand('/clear')}
-            title="Send /clear to agy"
-          >
-            /clear
-          </button>
-          <button
-            type="button"
             className="mini-icon-btn"
             onClick={() => onRestartSession?.(activeSession.tmuxName)}
             title="Restart active worker"

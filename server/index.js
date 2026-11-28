@@ -31,6 +31,11 @@ import {
   getListeningPortsForSessions,
   reconcileSessionStatuses,
   getTmuxConfigPath,
+  applyTmuxTheme,
+  listAllLocalServers,
+  killLocalServer,
+  adoptExternalTmuxSession,
+  killExternalTmuxSession,
 } from './tmuxManager.js';
 import {
   AUTH_COOKIE_NAME,
@@ -162,6 +167,16 @@ app.post('/api/fs/mkdir', (req, res) => {
     res.status(201).json(data);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Theme sync for tmux windows/status bar
+app.post('/api/theme', async (req, res) => {
+  try {
+    const applied = await applyTmuxTheme(req.body?.theme);
+    res.json({ ok: true, theme: applied });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -328,6 +343,45 @@ app.get('/api/ports', async (_req, res) => {
     res.json({ ports });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/servers', async (_req, res) => {
+  try {
+    const data = await listAllLocalServers();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/servers/kill', async (req, res) => {
+  try {
+    const { pid, signal } = req.body || {};
+    const result = await killLocalServer(pid, signal);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/servers/adopt-tmux', async (req, res) => {
+  try {
+    const { tmuxName, projectId } = req.body || {};
+    const session = await adoptExternalTmuxSession(tmuxName, projectId || null);
+    res.json({ ok: true, session });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/servers/kill-tmux', async (req, res) => {
+  try {
+    const { tmuxName } = req.body || {};
+    const result = await killExternalTmuxSession(tmuxName);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
