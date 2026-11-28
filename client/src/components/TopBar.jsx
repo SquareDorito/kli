@@ -7,6 +7,7 @@ import {
   GitBranch,
   BarChart3,
   Server,
+  Menu,
 } from 'lucide-react';
 import CircularTracker from './CircularTracker.jsx';
 
@@ -34,6 +35,7 @@ export default function TopBar({
   showGitDiff,
   showUsageHistory,
   showLocalServers,
+  onToggleMobileSidebar,
   onToggleTheme,
   onToggleAutocompact,
   onManualCompact,
@@ -71,6 +73,14 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-brand">
+        <button
+          type="button"
+          className="icon-btn mobile-menu-btn"
+          onClick={onToggleMobileSidebar}
+          title="Toggle Projects & Workers"
+        >
+          <Menu size={16} />
+        </button>
         <div className="brand-mark">A</div>
         <div className="brand-title">
           <span className="brand-name">Antigravity Web</span>

@@ -763,6 +763,55 @@ export default function TerminalPane({
         <div className="terminal-xterm-host" ref={hostRef} />
       </div>
 
+      <div className="mobile-key-bar" role="toolbar" aria-label="Mobile terminal keys">
+        {[
+          { label: 'Esc', data: '\x1b' },
+          { label: 'Tab', data: '\t' },
+          { label: '⇧Tab', data: '\x1b[Z' },
+          { label: 'Ctrl+C', data: '\x03' },
+          { label: 'Ctrl+D', data: '\x04' },
+          { label: '↑', data: '\x1b[A' },
+          { label: '↓', data: '\x1b[B' },
+          { label: '←', data: '\x1b[D' },
+          { label: '→', data: '\x1b[C' },
+          { label: '↵', data: '\r' },
+        ].map((k) => (
+          <button
+            key={k.label}
+            type="button"
+            className="mobile-key-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const sock = wsRef.current;
+              if (sock && sock.readyState === WebSocket.OPEN) {
+                sock.send(JSON.stringify({ type: 'input', data: k.data }));
+              }
+              xtermRef.current?.focus();
+            }}
+          >
+            {k.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className="mobile-key-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={async () => {
+            try {
+              const text = await navigator.clipboard.readText();
+              if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
+              }
+            } catch {
+              onToast?.('Tap terminal & use iOS Paste');
+            }
+            xtermRef.current?.focus();
+          }}
+        >
+          Paste
+        </button>
+      </div>
+
       <ClaudeStatusBar
         session={activeSession}
         project={activeProject}

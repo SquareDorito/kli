@@ -50,6 +50,7 @@ export default function App() {
   const [showGitDiff, setShowGitDiff] = useState(false);
   const [showUsageHistory, setShowUsageHistory] = useState(false);
   const [showLocalServers, setShowLocalServers] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [showMessaging, setShowMessaging] = useState(false);
   const [filePreviewTarget, setFilePreviewTarget] = useState(null);
   const [attentionSessions, setAttentionSessions] = useState({});
@@ -689,6 +690,7 @@ export default function App() {
         showGitDiff={showGitDiff}
         showUsageHistory={showUsageHistory}
         showLocalServers={showLocalServers}
+        onToggleMobileSidebar={() => setMobileSidebarOpen((v) => !v)}
         onToggleTheme={toggleTheme}
         onToggleAutocompact={handleToggleAutocompact}
         onManualCompact={handleManualCompact}
@@ -716,8 +718,15 @@ export default function App() {
       />
 
       <div className="app-body">
+        {mobileSidebarOpen && (
+          <div
+            className="mobile-sidebar-backdrop"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
         <ProjectSidebar
           width={sidebarWidth}
+          mobileOpen={mobileSidebarOpen}
           projects={orderedProjects}
           sessions={orderedSessions}
           usage={usage}
@@ -727,12 +736,19 @@ export default function App() {
           attentionSessions={attentionSessions}
           portsBySession={portsBySession}
           onSelectProject={setSelectedProjectId}
-          onSelectSession={handleSelectSession}
+          onSelectSession={(tmuxName) => {
+            handleSelectSession(tmuxName);
+            setMobileSidebarOpen(false);
+          }}
           onOpenNewSession={(projId) => {
             setNewSessionProjectId(projId || selectedProjectId);
             setShowNewSession(true);
+            setMobileSidebarOpen(false);
           }}
-          onOpenAddProject={() => setShowAddProject(true)}
+          onOpenAddProject={() => {
+            setShowAddProject(true);
+            setMobileSidebarOpen(false);
+          }}
           onOpenMessaging={() => setShowMessaging(true)}
           onDeleteProject={handleDeleteProject}
           onRenameProject={handleRenameProject}

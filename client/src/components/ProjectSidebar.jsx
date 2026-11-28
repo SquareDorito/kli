@@ -16,6 +16,7 @@ import {
 
 export default function ProjectSidebar({
   width,
+  mobileOpen = false,
   projects,
   sessions,
   usage,
@@ -95,7 +96,7 @@ export default function ProjectSidebar({
   };
 
   return (
-    <aside className="sidebar" style={width ? { width } : undefined}>
+    <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`} style={width ? { width } : undefined}>
       <div className="sidebar-top">
         <div style={{ display: 'flex', gap: 6 }}>
           <button
